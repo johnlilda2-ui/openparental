@@ -11,9 +11,18 @@ const _configuredApiBaseUrl = String.fromEnvironment(
   defaultValue: 'http://192.168.1.5:3000',
 );
 
+/// The Render dashboard's existing build command still supplies this retired
+/// hostname. Normalize it until the static-site build command is corrected.
+const _retiredRenderApiUrl = 'https://openparental-api.onrender.com';
+const _productionRenderApiUrl = 'https://openparental-api-jxh4.onrender.com';
+
+String get _initialApiBaseUrl =>
+    _configuredApiBaseUrl == _retiredRenderApiUrl
+        ? _productionRenderApiUrl
+        : _configuredApiBaseUrl;
+
 /// Backend base URL (editable on the login screen for self-hosting/dev).
-final baseUrlProvider =
-    StateProvider<String>((ref) => _configuredApiBaseUrl);
+final baseUrlProvider = StateProvider<String>((ref) => _initialApiBaseUrl);
 
 final apiProvider = Provider<ApiClient>((ref) {
   final base = ref.watch(baseUrlProvider);
