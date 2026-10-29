@@ -32,6 +32,18 @@ class PolicyRulesTest {
     }
 
     @Test
+    fun acceptsIntegralJsonNumberDecodedAsDouble() {
+        val parsed = PolicyRules.validate(
+            mapOf(
+                "appLimits" to listOf(
+                    mapOf("pkg" to "com.example.app", "dailyMinutes" to 60.0),
+                ),
+            ),
+        )
+        assertEquals(60, parsed.appLimits["com.example.app"])
+    }
+
+    @Test
     fun rejectsUnsupportedRuleFields() {
         assertThrows(IllegalArgumentException::class.java) {
             PolicyRules.validate(mapOf("screenTime" to mapOf("dailyMinutes" to 60)))
