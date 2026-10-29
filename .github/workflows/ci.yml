@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'Suhaib3100/**']
+    branches: [main, 'Suhaib3100/**', 'feature/android-fresh-location-command']
   pull_request:
 
 jobs:
