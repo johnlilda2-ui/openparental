@@ -16,14 +16,12 @@ import { PairingModule } from './pairing/pairing.module';
 import { PhotosModule } from './photos/photos.module';
 import { PoliciesModule } from './policies/policies.module';
 import { PrismaModule } from './prisma/prisma.module';
-import { RedisModule } from './redis/redis.module';
 import { TamperModule } from './tamper/tamper.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [configuration] }),
     PrismaModule,
-    RedisModule,
     AuditModule,
     FcmModule,
     AlertsModule,
