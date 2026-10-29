@@ -6,6 +6,7 @@ import app.monii.managed.data.PolicyStore
 import app.monii.managed.location.LocationReporter
 import app.monii.managed.net.CommandDto
 import app.monii.managed.repo.MoniiRepository
+import app.monii.managed.supervisor.SupervisorService
 
 /**
  * Pull pending commands, execute each, ack + post the result. The server spine
@@ -22,7 +23,7 @@ class CommandDispatcher(
         for (command in commands) {
             runCatching { repo.ack(command.id) }
             val outcome = runCatching { execute(command) }
-            if (outcome.isSuccess) {
+            val result = if (outcome.isSuccess) {
                 repo.result(command.id, outcome.getOrNull(), null)
             } else {
                 repo.result(
@@ -49,7 +50,9 @@ class CommandDispatcher(
                 mapOf("applied" to true)
             }
             "PING" -> mapOf("pong" to true)
-            "REQUEST_LOCATION" -> LocationReporter(context).reportCurrent(repo)
+            "REQUEST_LOCATION" -> SupervisorService.withLocationForeground {
+                LocationReporter(context).reportCurrent(repo)
+            }
             else -> throw IllegalArgumentException("Unsupported command type: ${command.type}")
         }
 }
