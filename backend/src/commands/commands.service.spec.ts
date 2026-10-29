@@ -61,24 +61,50 @@ describe('CommandsService', () => {
 
   describe('enqueue', () => {
     it('creates, pushes high-priority FCM for LOCK, and marks SENT', async () => {
-      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ id: 'c1', deviceId: 'd1', type: 'LOCK', state: 'SENT' });
       prisma.command.create.mockResolvedValue({
         id: 'c1',
         deviceId: 'd1',
         type: 'LOCK',
         state: 'QUEUED',
       });
-      prisma.command.update.mockResolvedValue({ id: 'c1', state: 'SENT' });
 
       const res = await service.enqueue('f1', 'd1', { type: 'LOCK' as never });
 
       expect(res.state).toBe('SENT');
+      expect(prisma.command.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c1', state: 'QUEUED' },
+        data: { state: 'SENT' },
+      });
       expect(fcm.sendData).toHaveBeenCalledWith(
         'tok',
         expect.objectContaining({ kind: 'command', commandId: 'c1' }),
         true,
       );
       expect(audit.log).toHaveBeenCalled();
+    });
+
+    it('preserves ACKED if the device acknowledges before the FCM send update', async () => {
+      prisma.command.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ id: 'c1', deviceId: 'd1', type: 'PING', state: 'ACKED' });
+      prisma.command.create.mockResolvedValue({
+        id: 'c1',
+        deviceId: 'd1',
+        type: 'PING',
+        state: 'QUEUED',
+      });
+      prisma.command.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await service.enqueue('f1', 'd1', { type: 'PING' as never });
+
+      expect(result.state).toBe('ACKED');
+      expect(prisma.command.updateMany).toHaveBeenCalledWith({
+        where: { id: 'c1', state: 'QUEUED' },
+        data: { state: 'SENT' },
+      });
     });
 
     it('is idempotent for the same device and command type', async () => {
@@ -133,9 +159,10 @@ describe('CommandsService', () => {
         familyId: 'f1',
         fcmToken: null,
       });
-      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ id: 'c1', type: 'PING', state: 'QUEUED' });
       prisma.command.create.mockResolvedValue({ id: 'c1', type: 'PING' });
-      prisma.command.update.mockResolvedValue({ id: 'c1', state: 'QUEUED' });
 
       const res = await service.enqueue('f1', 'd1', { type: 'PING' as never });
       expect(res.state).toBe('QUEUED');
@@ -143,14 +170,15 @@ describe('CommandsService', () => {
     });
 
     it('keeps the command queued if FCM delivery throws', async () => {
-      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue({ id: 'c1', deviceId: 'd1', type: 'PING', state: 'QUEUED' });
       prisma.command.create.mockResolvedValue({
         id: 'c1',
         deviceId: 'd1',
         type: 'PING',
         state: 'QUEUED',
       });
-      prisma.command.update.mockResolvedValue({ id: 'c1', state: 'QUEUED' });
       fcm.sendData.mockRejectedValue(new Error('FCM unavailable'));
 
       const result = await service.enqueue('f1', 'd1', { type: 'PING' as never });
