@@ -53,3 +53,10 @@ src/
 - **access** (short TTL) — parent app, `Authorization: Bearer`. `JwtAuthGuard`.
 - **refresh** (long TTL, rotated, sha256-hashed in DB) — parent app.
 - **device** (very long TTL) — managed app, minted at pairing claim. `DeviceAuthGuard`.
+
+
+## Dependency security verification
+
+The backend CI and dependency-maintenance workflow use Node.js 24.15.0 and rebuild the npm lockfile from the declared dependency graph before doing a clean `npm ci`. Verify production dependencies with `npm run audit:production` and all dependencies with `npm audit`; both commands must be evaluated against the committed lockfile.
+
+The current Jest toolchain uses an OpenParental-maintained local compatibility fork at `vendor/deepmerge`, configured through the npm `deepmerge` override. It is based on the upstream 4.3.1 implementation, preserves the MIT license notices, and rejects prototype-sensitive keys before copying properties. This local patch is not an upstream release; keep its regression tests in `src/security/deepmerge-hardening.spec.ts` and re-evaluate it when upstream publishes a fixed version. Never replace it with an older Jest version solely to make the advisory disappear.
