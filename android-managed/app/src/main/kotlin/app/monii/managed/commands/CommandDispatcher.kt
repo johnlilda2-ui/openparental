@@ -38,8 +38,11 @@ class CommandDispatcher(
             }
             "UNLOCK" -> mapOf("noop" to "cannot force-unlock without Device Owner")
             "SET_POLICY" -> {
-                PolicyStore.save(context, command.payload)
-                mapOf("applied" to true)
+                // The backend wraps rules as { version, rules }; enforcement reads the rules object.
+                val rules = command.payload?.get("rules") as? Map<String, Any?>
+                    ?: error("SET_POLICY payload is missing rules")
+                PolicyStore.save(context, rules)
+                mapOf("applied" to true, "version" to command.payload["version"])
             }
             "PING" -> mapOf("pong" to true)
             "REQUEST_LOCATION" -> mapOf("requested" to true) // Phase 6 wires the actual fix
