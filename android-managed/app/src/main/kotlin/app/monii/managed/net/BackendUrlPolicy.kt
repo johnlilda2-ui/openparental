@@ -14,7 +14,6 @@ object BackendUrlPolicy {
         "10.0.2.2", // Android emulator -> host machine
         "localhost",
         "127.0.0.1",
-        "::1",
     )
 
     fun normalize(candidate: String): String {
