@@ -55,3 +55,29 @@ jobs:
         run: |
           flutter pub get
           flutter analyze
+
+  parent-web:
+    name: Parent dashboard (Flutter Web build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Generate web platform files
+        working-directory: app-parent
+        run: flutter create --platforms=web .
+      - name: Build web dashboard
+        working-directory: app-parent
+        env:
+          OPENPARENTAL_API_BASE_URL: ${{ vars.OPENPARENTAL_API_BASE_URL }}
+        run: |
+          flutter pub get
+          flutter build web --release --dart-define=OPENPARENTAL_API_BASE_URL="${OPENPARENTAL_API_BASE_URL:-http://192.168.1.5:3000}"
+      - name: Upload web dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openparental-parent-web
+          path: app-parent/build/web/
+          if-no-files-found: error
+          retention-days: 14
