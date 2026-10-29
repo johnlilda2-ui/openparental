@@ -38,12 +38,32 @@ class DevicesTab extends ConsumerWidget {
       String type, String label) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
-      await ref.read(apiProvider).sendCommand(deviceId, type);
-      messenger.showSnackBar(SnackBar(content: Text('$label sent')));
+      final api = ref.read(apiProvider);
+      var command = await api.sendCommand(deviceId, type);
+      final deadline = DateTime.now().add(const Duration(seconds: 30));
+      while (!_isTerminalCommand(command.state) &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(const Duration(seconds: 2));
+        if (!context.mounted) return;
+        command = await api.commandStatus(command.id);
+      }
+      if (!context.mounted) return;
+      final message = switch (command.state) {
+        'DONE' => '$label completed',
+        'FAILED' => '$label failed: ${command.error ?? 'device reported an error'}',
+        'EXPIRED' => '$label expired before completion',
+        _ => '$label is still pending (${command.state.toLowerCase()})',
+      };
+      messenger.showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+      if (context.mounted) {
+        messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+      }
     }
   }
+
+  bool _isTerminalCommand(String state) =>
+      state == 'DONE' || state == 'FAILED' || state == 'EXPIRED';
 
   void _switchDevice(
       BuildContext context, WidgetRef ref, List<Device> devices) {
