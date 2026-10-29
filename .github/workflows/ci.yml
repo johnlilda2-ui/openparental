@@ -1,5 +1,10 @@
 name: CI
 
+# Avoid running duplicate push + pull_request pipelines for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, 'Suhaib3100/**', 'feature/android-fresh-location-command']
