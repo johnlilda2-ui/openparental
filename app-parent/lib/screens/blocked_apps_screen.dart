@@ -128,7 +128,7 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _busy ? null : _save,
-                  child: const Text('Save & push'),
+                  child: const Text('Save & queue'),
                 ),
               ],
             ),
