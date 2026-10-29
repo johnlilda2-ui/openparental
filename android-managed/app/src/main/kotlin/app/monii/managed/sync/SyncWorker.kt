@@ -23,6 +23,8 @@ class SyncWorker(context: Context, params: WorkerParameters) :
         val repo = MoniiRepository(applicationContext, store)
         val admin = AdminManager(applicationContext)
         return try {
+            // Keep the device's current FCM token registered after token rotation.
+            repo.syncFcmToken()
             repo.heartbeat(batteryPct())
             repo.flushEvents()
             CommandDispatcher(applicationContext, repo, admin).syncAndExecute()
