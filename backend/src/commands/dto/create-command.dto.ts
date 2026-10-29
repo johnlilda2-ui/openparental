@@ -1,5 +1,5 @@
 import { CommandType } from '@prisma/client';
-import { IsEnum, IsObject, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class CreateCommandDto {
   @IsEnum(CommandType)
@@ -9,8 +9,10 @@ export class CreateCommandDto {
   @IsObject()
   payload?: Record<string, unknown>;
 
-  /** Optional client-supplied key; if a command with it exists, it's returned as-is. */
+  /** Optional idempotency key, scoped to this device and command type. */
   @IsOptional()
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(128)
   idempotencyKey?: string;
 }
