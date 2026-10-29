@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'alerts_tab.dart';
 import 'devices_tab.dart';
@@ -16,6 +17,18 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _index = 1; // Devices is the home tab.
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSelectedDevice();
+  }
+
+  Future<void> _restoreSelectedDevice() async {
+    final saved = await const FlutterSecureStorage().read(key: 'selected_device_id');
+    if (!mounted || saved == null || saved.isEmpty) return;
+    ref.read(selectedDeviceIdProvider.notifier).state = saved;
+  }
 
   void _selectTab(int index) {
     // Re-fetch when opening Alerts so new server-side events are not hidden
