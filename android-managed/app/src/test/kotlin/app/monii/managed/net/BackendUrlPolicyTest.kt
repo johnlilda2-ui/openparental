@@ -22,6 +22,13 @@ class BackendUrlPolicyTest {
     }
 
     @Test
+    fun rejects_ipv6_loopback_http_not_allowed_by_network_security_config() {
+        assertThrows(IllegalArgumentException::class.java) {
+            BackendUrlPolicy.normalize("http://[::1]:3000")
+        }
+    }
+
+    @Test
     fun rejects_cleartext_remote_backend() {
         assertThrows(IllegalArgumentException::class.java) {
             BackendUrlPolicy.normalize("http://api.example.com")
