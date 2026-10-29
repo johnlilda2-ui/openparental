@@ -53,7 +53,8 @@ class DeviceStore(context: Context) {
     companion object {
         private const val PREFS = "monii_identity"
 
-        // 10.0.2.2 = the host machine from the Android emulator.
-        const val DEFAULT_BASE = "http://10.0.2.2:3000"
+        // Production API: the child app must work on real phones, not only emulators.
+        // Local development can still override this through the app's base-URL setting.
+        const val DEFAULT_BASE = "https://openparental-api-jxh4.onrender.com"
     }
 }
