@@ -34,11 +34,6 @@ export class DevicesService {
     input: ClaimDeviceInput,
   ): Promise<{ device: Device; deviceSecret: string }> {
     const deviceSecret = randomToken();
-    const existing = input.installationId
-      ? await this.prisma.device.findFirst({
-          where: { familyId, installationId: input.installationId },
-        })
-      : null;
     const data = {
       name: input.deviceName ?? input.model ?? 'Child device',
       manufacturer: input.manufacturer,
@@ -53,8 +48,17 @@ export class DevicesService {
     };
     // Re-pairing the same app installation reuses its device row and rotates
     // its credential; events, alerts and history remain attached to that row.
-    const device = existing
-      ? await this.prisma.device.update({ where: { id: existing.id }, data })
+    const device = input.installationId
+      ? await this.prisma.device.upsert({
+          where: {
+            familyId_installationId: {
+              familyId,
+              installationId: input.installationId,
+            },
+          },
+          create: { familyId, ...data },
+          update: data,
+        })
       : await this.prisma.device.create({ data: { familyId, ...data } });
     return { device, deviceSecret };
   }
