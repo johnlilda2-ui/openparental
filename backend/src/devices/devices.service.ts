@@ -3,7 +3,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Device } from '@prisma/client';
+import { Device, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
 import { randomToken, safeEqual, sha256 } from '../common/hash.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,6 +19,8 @@ export interface ClaimDeviceInput {
   fcmToken?: string;
 }
 
+type DeviceWriter = Pick<Prisma.TransactionClient, 'device'>;
+
 @Injectable()
 export class DevicesService {
   constructor(
@@ -31,9 +33,10 @@ export class DevicesService {
   async createForPairing(
     familyId: string,
     input: ClaimDeviceInput,
+    writer: DeviceWriter = this.prisma,
   ): Promise<{ device: Device; deviceSecret: string }> {
     const deviceSecret = randomToken();
-    const device = await this.prisma.device.create({
+    const device = await writer.device.create({
       data: {
         familyId,
         name: input.deviceName ?? input.model ?? 'Child device',
