@@ -126,13 +126,11 @@ on your dashboard.
 
 ## 🗺️ Roadmap
 
-- [x] **v1 — enforcement, limits, tamper-evidence, location, alerts** (built, CI-green)
-- [ ] **FCM push** — instant command delivery (device polls every 60s today; needs your Firebase project)
-- [x] **Guided onboarding** — per-permission grant flow in the child app (incl. OEM auto-start)
-- [x] **DNS content filter** — DNS-only `VpnService`, domain blocklists
-- [ ] **Filter lists** — maintained blocklist sources + per-family categories for the content filter
-- [ ] **v1.1 — live painting overlay**
-- [ ] **v1.5 — consented WebRTC screen-view + AMBER mode** (text archive + on-device photo screening)
+The roadmap is maintained in **[ROADMAP.md](ROADMAP.md)**. It tracks current source status, platform limitations, delivery phases, and the evidence required before a feature is called complete.
+
+**Current priority: Android first.** Finish the explicit fresh-location request end to end, get pull-request CI running, verify command outcomes and security, then harden core supervision and complete app controls, alerts, and DNS filtering. iOS is out of scope until Android is stable and explicitly reprioritized.
+
+Status labels are evidence-based: code existing does not automatically mean a feature is end-to-end tested or CI-green. Advanced features such as screen sharing remain planned and must use explicit Android system consent and visible session controls.
 
 ## 🧰 Tech stack
 
