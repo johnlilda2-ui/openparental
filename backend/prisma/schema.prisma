@@ -239,6 +239,7 @@ model Alert {
   createdAt DateTime  @default(now())
 
   @@index([familyId, createdAt])
+  @@index([deviceId])
 }
 
 model Consent {
