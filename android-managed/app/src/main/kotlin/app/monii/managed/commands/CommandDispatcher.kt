@@ -9,9 +9,9 @@ import app.monii.managed.repo.MoniiRepository
 import app.monii.managed.supervisor.SupervisorService
 
 /**
- * Pull pending commands, execute each, ack + post the result. The server spine
- * is idempotent (ack/result are no-ops once terminal), so re-running after a
- * crash or duplicate wake is safe.
+ * Pull pending commands, acknowledge each, then execute only if the server
+ * confirms ACKED. This prevents duplicate/expired commands from being executed
+ * just because a push or stale polling response arrived late.
  */
 class CommandDispatcher(
     private val context: Context,
@@ -20,10 +20,13 @@ class CommandDispatcher(
 ) {
     suspend fun syncAndExecute(): Int {
         val commands = repo.pullCommands()
+        var processed = 0
         for (command in commands) {
-            runCatching { repo.ack(command.id) }
+            val ack = runCatching { repo.ack(command.id) }.getOrNull() ?: continue
+            if (ack.state != "ACKED") continue
+
             val outcome = runCatching { execute(command) }
-            val result = if (outcome.isSuccess) {
+            if (outcome.isSuccess) {
                 repo.result(command.id, outcome.getOrNull(), null)
             } else {
                 repo.result(
@@ -32,8 +35,9 @@ class CommandDispatcher(
                     outcome.exceptionOrNull()?.message ?: "Command failed",
                 )
             }
+            processed++
         }
-        return commands.size
+        return processed
     }
 
     private suspend fun execute(command: CommandDto): Map<String, Any?> =
