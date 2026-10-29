@@ -14,6 +14,11 @@ export function buildConfiguration(env: NodeJS.ProcessEnv = process.env) {
   return {
     port: parseInt(env.PORT ?? '3000', 10),
     nodeEnv,
+    corsOrigins:
+      env.CORS_ORIGINS ??
+      (nodeEnv === 'production'
+        ? ''
+        : 'http://localhost:3000,http://localhost:5173'),
     databaseUrl: env.DATABASE_URL,
     redisUrl: env.REDIS_URL ?? 'redis://localhost:6379',
     jwt: {
