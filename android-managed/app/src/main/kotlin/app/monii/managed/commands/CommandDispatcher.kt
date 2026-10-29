@@ -8,6 +8,7 @@ import app.monii.managed.location.LocationReporter
 import app.monii.managed.net.CommandDto
 import app.monii.managed.permissions.SpecialAccess
 import app.monii.managed.repo.MoniiRepository
+import app.monii.managed.supervisor.SupervisorService
 
 /**
  * Pull pending commands, acknowledge each, then execute only if the server
@@ -23,6 +24,13 @@ class CommandDispatcher(
         val commands = repo.pullCommands()
         var processed = 0
         for (command in commands) {
+            // WorkManager can run after Android has stopped the foreground
+            // service. Do not ACK a location command that cannot legally enter
+            // visible location foreground mode; leave it pending for the live
+            // supervisor loop, or let its TTL expire and report that honestly.
+            if (command.type == "REQUEST_LOCATION" && !SupervisorService.isActive()) {
+                continue
+            }
             val ack = runCatching { repo.ack(command.id) }.getOrNull() ?: continue
             if (ack.state != "ACKED") continue
 
