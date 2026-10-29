@@ -2,6 +2,7 @@ package app.monii.managed.repo
 
 import android.content.Context
 import android.os.Build
+import app.monii.managed.BuildConfig
 import app.monii.managed.data.EventBuffer
 import app.monii.managed.identity.DeviceStore
 import app.monii.managed.net.ApiProvider
@@ -42,7 +43,7 @@ class MoniiRepository(
                 manufacturer = Build.MANUFACTURER,
                 model = Build.MODEL,
                 osVersion = Build.VERSION.RELEASE,
-                appVersion = APP_VERSION,
+                appVersion = BuildConfig.VERSION_NAME,
                 fcmToken = store.fcmToken(),
             ),
         )
@@ -114,7 +115,4 @@ class MoniiRepository(
             }
         }
 
-    companion object {
-        const val APP_VERSION = "0.0.1"
-    }
 }
