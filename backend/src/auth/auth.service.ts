@@ -39,13 +39,28 @@ export class AuthService {
     if (existing) throw new ConflictException('email already registered');
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        family: { create: { name: dto.familyName ?? `${dto.email}'s family` } },
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          family: { create: { name: dto.familyName ?? `${dto.email}'s family` } },
+        },
+      });
+    } catch (error) {
+      // The pre-check is only a friendly fast path; enforce uniqueness under
+      // concurrent registrations using the database's unique constraint too.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('email already registered');
+      }
+      throw error;
+    }
     return this.issue(user);
   }
 
