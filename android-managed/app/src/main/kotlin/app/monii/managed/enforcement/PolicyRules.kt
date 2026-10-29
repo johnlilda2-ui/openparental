@@ -64,8 +64,8 @@ class PolicyRules(
                     val pkg = requiredString(rule, "pkg", "appLimits[$index]")
                     validatePackageName(pkg)
                     val minutes = requiredInt(rule, "dailyMinutes", "appLimits[$index]")
-                    require(minutes in 1..1440) {
-                        "appLimits[$index].dailyMinutes must be between 1 and 1440"
+                    require(minutes in 0..1440) {
+                        "appLimits[$index].dailyMinutes must be between 0 and 1440"
                     }
                     limits[pkg] = minutes
                 }
@@ -123,10 +123,13 @@ class PolicyRules(
             require(value != null && value.isJsonPrimitive && value.asJsonPrimitive.isNumber) {
                 "$prefix.$field must be an integer"
             }
-            val raw = value.asString
-            val number = raw.toIntOrNull()
+            val numeric = runCatching { value.asString.toDouble() }.getOrNull()
                 ?: throw IllegalArgumentException("$prefix.$field must be an integer")
-            return number
+            require(numeric.isFinite() && numeric % 1.0 == 0.0 &&
+                numeric >= Int.MIN_VALUE && numeric <= Int.MAX_VALUE) {
+                "$prefix.$field must be an integer"
+            }
+            return numeric.toInt()
         }
 
         private fun validatePackageName(pkg: String) {
