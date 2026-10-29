@@ -38,7 +38,7 @@ jobs:
       - run: npx prisma generate
       - run: npm run build
       - run: npm test
-      - name: Report remaining high and critical advisories
+      - name: Report all remaining npm advisories
         run: |
           npm audit --json > npm-audit.json || true
           node <<'NODE'
@@ -52,19 +52,17 @@ jobs:
           }
           console.log('NPM audit severity summary:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
           for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
-            if (item.severity === 'high' || item.severity === 'critical') {
-              console.log(JSON.stringify({
-                package: name,
-                severity: item.severity,
-                direct: item.isDirect,
-                installedRange: item.range,
-                fixAvailable: item.fixAvailable,
-                dependents: item.effects,
-                advisories: (item.via ?? [])
-                  .filter(v => typeof v === 'object')
-                  .map(v => ({ title: v.title, url: v.url, range: v.range })),
-              }));
-            }
+            console.log(JSON.stringify({
+              package: name,
+              severity: item.severity,
+              direct: item.isDirect,
+              installedRange: item.range,
+              fixAvailable: item.fixAvailable,
+              dependents: item.effects,
+              advisories: (item.via ?? [])
+                .filter(v => typeof v === 'object')
+                .map(v => ({ title: v.title, url: v.url, range: v.range })),
+            }));
           }
           NODE
       - name: Commit the validated lockfile changes
