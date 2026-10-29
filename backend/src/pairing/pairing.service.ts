@@ -30,7 +30,6 @@ export class PairingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
-    private readonly devices: import('../devices/devices.service').DevicesService,
     private readonly audit: AuditService,
   ) {}
 
