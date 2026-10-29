@@ -70,10 +70,14 @@ export class AuthService {
     if (!user || !user.refreshTokenHash) {
       throw new UnauthorizedException('refresh token revoked');
     }
-    if (!safeEqual(sha256(dto.refreshToken), user.refreshTokenHash)) {
+    const previousHash = user.refreshTokenHash;
+    if (!safeEqual(sha256(dto.refreshToken), previousHash)) {
       throw new UnauthorizedException('refresh token mismatch');
     }
-    return this.issue(user);
+
+    // Compare-and-swap means concurrent requests with one refresh token cannot
+    // both succeed and return competing refresh tokens.
+    return this.issue(user, previousHash);
   }
 
   async logout(userId: string): Promise<void> {
@@ -91,23 +95,39 @@ export class AuthService {
     });
   }
 
-  /** Issue an access+refresh pair and persist the (rotated) refresh hash. */
-  private async issue(user: {
-    id: string;
-    email: string;
-    familyId: string;
-    role: string;
-  }): Promise<AuthResult> {
+  /** Issue an access+refresh pair and persist its hash. */
+  private async issue(
+    user: {
+      id: string;
+      email: string;
+      familyId: string;
+      role: string;
+    },
+    expectedPreviousHash?: string,
+  ): Promise<AuthResult> {
     const accessToken = await this.tokens.signAccess(
       user.id,
       user.familyId,
       user.role,
     );
     const refreshToken = await this.tokens.signRefresh(user.id, user.familyId);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: sha256(refreshToken) },
-    });
+    const nextHash = sha256(refreshToken);
+
+    if (expectedPreviousHash !== undefined) {
+      const result = await this.prisma.user.updateMany({
+        where: { id: user.id, refreshTokenHash: expectedPreviousHash },
+        data: { refreshTokenHash: nextHash },
+      });
+      if (result.count !== 1) {
+        throw new UnauthorizedException('refresh token has already been used');
+      }
+    } else {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshTokenHash: nextHash },
+      });
+    }
+
     return {
       accessToken,
       refreshToken,
