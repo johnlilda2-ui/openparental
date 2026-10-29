@@ -26,6 +26,12 @@ class LocationReporter(private val context: Context) {
         if (!hasPermission()) {
             throw SecurityException("Location permission is not granted on the child device")
         }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && !hasBackgroundPermission()) {
+            throw SecurityException(
+                "Background location is not allowed. On the child device, grant OpenParental location access as 'Allow all the time' to support remote location requests.",
+            )
+        }
+
         val manager = lm ?: throw IllegalStateException("Location service is unavailable")
         val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             .filter { provider -> runCatching { manager.isProviderEnabled(provider) }.getOrDefault(false) }
@@ -33,6 +39,16 @@ class LocationReporter(private val context: Context) {
             throw IllegalStateException("Location is turned off or no location provider is enabled")
         }
 
+        return app.monii.managed.supervisor.SupervisorService.withLocationForeground {
+            acquireAndReport(repo, manager, providers)
+        }
+    }
+
+    private suspend fun acquireAndReport(
+        repo: MoniiRepository,
+        manager: LocationManager,
+        providers: List<String>,
+    ): Map<String, Any?> {
         var location: Location? = null
         for (provider in providers) {
             location = withTimeoutOrNull(PROVIDER_TIMEOUT_MS) {
@@ -93,6 +109,11 @@ class LocationReporter(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun hasBackgroundPermission(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
 
     companion object {
