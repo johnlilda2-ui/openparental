@@ -76,6 +76,20 @@ describe('CommandsService', () => {
       expect(audit.log).toHaveBeenCalled();
     });
 
+    it('keeps SET_POLICY alive beyond the 15-minute sync fallback', async () => {
+      devices.getForFamily.mockResolvedValue({ id: 'd1', familyId: 'f1', fcmToken: null });
+      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.create.mockResolvedValue({ id: 'c-policy', type: 'SET_POLICY' });
+      prisma.command.update.mockResolvedValue({ id: 'c-policy', state: 'QUEUED' });
+
+      await service.enqueue('f1', 'd1', { type: 'SET_POLICY' as never });
+
+      const expiresAt = prisma.command.create.mock.calls[0][0].data.expiresAt as Date;
+      expect(expiresAt.getTime() - Date.now()).toBeGreaterThan(
+        6 * 24 * 60 * 60 * 1000,
+      );
+    });
+
     it('is idempotent: an existing key returns the existing command', async () => {
       prisma.command.findUnique.mockResolvedValue({ id: 'c0', state: 'ACKED' });
       const res = await service.enqueue('f1', 'd1', {
