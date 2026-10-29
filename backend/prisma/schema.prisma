@@ -112,6 +112,7 @@ model Device {
   manufacturer String?
   model        String?
   platform     String        @default("android")
+  installationId String?
   osVersion    String?
   appVersion   String?
   status       DeviceStatus  @default(PROVISIONING)
@@ -129,6 +130,7 @@ model Device {
   alerts       Alert[]
 
   @@index([familyId])
+  @@unique([familyId, installationId])
 }
 
 model Pairing {
