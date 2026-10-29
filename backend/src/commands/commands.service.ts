@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Command, CommandType, Prisma } from '@prisma/client';
 import { AuditService } from '../audit/audit.service';
@@ -19,8 +23,9 @@ const HIGH_PRIORITY: ReadonlySet<CommandType> = new Set([
 /**
  *  enqueue ─► QUEUED ─FCM─► SENT ─device─► ACKED ─device─► DONE | FAILED
  *                 └────────────── TTL ──────────────► EXPIRED
- *  Idempotent: dup idempotencyKey returns the existing command; ack/result are
- *  no-ops once terminal, so a duplicate FCM delivery produces exactly one effect.
+ *  Idempotency keys are scoped to the same device and command type. ACKED
+ *  commands also expire after a bounded result window so lost results cannot
+ *  leave the parent UI in a permanent pending state.
  */
 @Injectable()
 export class CommandsService {
@@ -47,18 +52,29 @@ export class CommandsService {
     const existing = await this.prisma.command.findUnique({
       where: { idempotencyKey },
     });
-    if (existing) return existing;
+    if (existing) return this.validateIdempotentReuse(existing, deviceId, dto);
 
-    const command = await this.prisma.command.create({
-      data: {
-        deviceId,
-        type: dto.type,
-        payload: (dto.payload ?? undefined) as Prisma.InputJsonValue | undefined,
-        idempotencyKey,
-        state: 'QUEUED',
-        expiresAt: new Date(Date.now() + this.ttlSeconds * 1000),
-      },
-    });
+    let command: Command;
+    try {
+      command = await this.prisma.command.create({
+        data: {
+          deviceId,
+          type: dto.type,
+          payload: (dto.payload ?? undefined) as Prisma.InputJsonValue | undefined,
+          idempotencyKey,
+          state: 'QUEUED',
+          expiresAt: new Date(Date.now() + this.ttlSeconds * 1000),
+        },
+      });
+    } catch (error) {
+      // A concurrent request may win the unique-key race. Only return that
+      // command if it matches this device and command type.
+      const raced = await this.prisma.command
+        .findUnique({ where: { idempotencyKey } })
+        .catch(() => null);
+      if (raced) return this.validateIdempotentReuse(raced, deviceId, dto);
+      throw error;
+    }
 
     const sent = device.fcmToken
       ? await this.fcm.sendData(
@@ -118,7 +134,7 @@ export class CommandsService {
         data: { state: 'ACKED' },
       });
     }
-    return command; // idempotent
+    return command; // idempotent; client must check state before executing
   }
 
   async complete(
@@ -127,8 +143,12 @@ export class CommandsService {
     dto: CommandResultDto,
   ): Promise<Command> {
     const command = await this.ownedCommand(deviceId, commandId);
-    if (command.state === 'DONE' || command.state === 'FAILED') {
-      return command; // idempotent
+    if (
+      command.state === 'DONE' ||
+      command.state === 'FAILED' ||
+      command.state === 'EXPIRED'
+    ) {
+      return command; // terminal states cannot be rewritten by late results
     }
     return this.prisma.command.update({
       where: { id: commandId },
@@ -141,14 +161,40 @@ export class CommandsService {
   }
 
   private async expireStale(deviceId: string): Promise<void> {
+    const now = new Date();
+    const resultDeadline = new Date(now.getTime() - this.ttlSeconds * 1000);
     await this.prisma.command.updateMany({
       where: {
         deviceId,
-        state: { in: ['QUEUED', 'SENT'] },
-        expiresAt: { lt: new Date() },
+        OR: [
+          {
+            state: { in: ['QUEUED', 'SENT'] },
+            expiresAt: { lt: now },
+          },
+          {
+            state: 'ACKED',
+            updatedAt: { lt: resultDeadline },
+          },
+        ],
       },
-      data: { state: 'EXPIRED' },
+      data: {
+        state: 'EXPIRED',
+        error: 'Command expired before a terminal result was received',
+      },
     });
+  }
+
+  private validateIdempotentReuse(
+    existing: Command,
+    deviceId: string,
+    dto: CreateCommandDto,
+  ): Command {
+    if (existing.deviceId !== deviceId || existing.type !== dto.type) {
+      throw new ConflictException(
+        'Idempotency key is already associated with a different device or command type',
+      );
+    }
+    return existing;
   }
 
   private async ownedCommand(
