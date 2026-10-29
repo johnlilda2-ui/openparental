@@ -1,0 +1,69 @@
+name: Dependency vulnerability remediation
+
+on:
+  push:
+    branches:
+      - feature/openparental-web-dashboard
+    paths:
+      - 'backend/package.json'
+      - 'backend/package-lock.json'
+      - '.github/workflows/dependency-remediation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  audit-fix-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out target branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/openparental-web-dashboard
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install locked dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Apply non-breaking security updates
+        working-directory: backend
+        run: npm audit fix
+
+      - name: Generate Prisma client
+        working-directory: backend
+        run: npx prisma generate
+
+      - name: Verify backend build
+        working-directory: backend
+        run: npm run build
+
+      - name: Verify backend tests
+        working-directory: backend
+        run: npm test -- --runInBand
+
+      - name: Report remaining advisories
+        working-directory: backend
+        run: |
+          npm audit --json > /tmp/npm-audit.json || true
+          node -e "const a=require('/tmp/npm-audit.json'); console.log('Remaining dependency advisories:', JSON.stringify(a.metadata?.vulnerabilities ?? {})); for (const [name,v] of Object.entries(a.vulnerabilities ?? {})) console.log(name + ': ' + v.severity + '; fix=' + JSON.stringify(v.fixAvailable));"
+
+      - name: Commit verified lockfile updates
+        run: |
+          if ! git diff --quiet -- backend/package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add backend/package-lock.json
+            git commit -m "security: apply verified non-breaking dependency updates"
+            git push origin HEAD:feature/openparental-web-dashboard
+          else
+            echo "No compatible lockfile updates were available."
+          fi
