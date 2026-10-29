@@ -33,7 +33,7 @@ export class PoliciesService {
     });
   }
 
-  /** Create a new active version and push SET_POLICY to every device. */
+  /** Create an active version and queue SET_POLICY for every paired device. */
   async update(
     familyId: string,
     rules: Record<string, unknown>,
