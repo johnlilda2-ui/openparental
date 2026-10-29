@@ -4,9 +4,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 
-/// Backend base URL (editable on the login screen for dev).
+/// Can be set at build time for a hosted web deployment:
+/// flutter build web --dart-define=OPENPARENTAL_API_BASE_URL=https://api.example.com
+const _configuredApiBaseUrl = String.fromEnvironment(
+  'OPENPARENTAL_API_BASE_URL',
+  defaultValue: 'http://192.168.1.5:3000',
+);
+
+/// Backend base URL (editable on the login screen for self-hosting/dev).
 final baseUrlProvider =
-    StateProvider<String>((ref) => 'http://192.168.1.5:3000');
+    StateProvider<String>((ref) => _configuredApiBaseUrl);
 
 final apiProvider = Provider<ApiClient>((ref) {
   final base = ref.watch(baseUrlProvider);
