@@ -11,6 +11,7 @@ data class ClaimRequest(
     val osVersion: String?,
     val appVersion: String?,
     val fcmToken: String? = null,
+    val installationId: String? = null,
 )
 
 data class ClaimResponse(
