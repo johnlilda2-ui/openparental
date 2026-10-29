@@ -4,13 +4,15 @@ name: Dependency security update
 # rewriting the lockfile on every branch push creates noisy commits and can
 # race with feature work.
 on:
-  workflow_dispatch:
+  push:
+    branches: ['feature/android-fresh-location-command']
 
 permissions:
   contents: write
 
 jobs:
   update-lockfile:
+    if: ${{ contains(github.event.head_commit.message, '[audit-deps]') && !contains(github.event.head_commit.message, '[auto-deps]') }}
     runs-on: ubuntu-latest
     defaults:
       run:
