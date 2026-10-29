@@ -11,7 +11,9 @@ export default () => ({
   },
   heartbeat: {
     intervalSeconds: parseInt(process.env.HEARTBEAT_INTERVAL_SECONDS ?? '75', 10),
-    missGrace: parseInt(process.env.HEARTBEAT_MISS_GRACE ?? '2', 10),
+    // The foreground sync loop is 60s, but WorkManager's reliable backstop is 15m.
+    // Allow a full backstop window plus margin before declaring a device dark.
+    missGrace: parseInt(process.env.HEARTBEAT_MISS_GRACE ?? '16', 10),
   },
   command: {
     ttlSeconds: parseInt(process.env.COMMAND_TTL_SECONDS ?? '300', 10),
