@@ -17,6 +17,7 @@ export interface ClaimDeviceInput {
   osVersion?: string;
   appVersion?: string;
   fcmToken?: string;
+  installationId?: string;
 }
 
 @Injectable()
@@ -33,20 +34,28 @@ export class DevicesService {
     input: ClaimDeviceInput,
   ): Promise<{ device: Device; deviceSecret: string }> {
     const deviceSecret = randomToken();
-    const device = await this.prisma.device.create({
-      data: {
-        familyId,
-        name: input.deviceName ?? input.model ?? 'Child device',
-        manufacturer: input.manufacturer,
-        model: input.model,
-        osVersion: input.osVersion,
-        appVersion: input.appVersion,
-        fcmToken: input.fcmToken,
-        secretHash: sha256(deviceSecret),
-        status: 'ONLINE',
-        lastSeenAt: new Date(),
-      },
-    });
+    const existing = input.installationId
+      ? await this.prisma.device.findFirst({
+          where: { familyId, installationId: input.installationId },
+        })
+      : null;
+    const data = {
+      name: input.deviceName ?? input.model ?? 'Child device',
+      manufacturer: input.manufacturer,
+      model: input.model,
+      osVersion: input.osVersion,
+      appVersion: input.appVersion,
+      fcmToken: input.fcmToken,
+      installationId: input.installationId,
+      secretHash: sha256(deviceSecret),
+      status: 'ONLINE' as const,
+      lastSeenAt: new Date(),
+    };
+    // Re-pairing the same app installation reuses its device row and rotates
+    // its credential; events, alerts and history remain attached to that row.
+    const device = existing
+      ? await this.prisma.device.update({ where: { id: existing.id }, data })
+      : await this.prisma.device.create({ data: { familyId, ...data } });
     return { device, deviceSecret };
   }
 
