@@ -37,6 +37,16 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
+      - name: Restore Firebase app configuration (if configured)
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > android-managed/app/google-services.json
+            echo "Firebase Android configuration restored from GitHub Actions secret."
+          else
+            echo "Firebase Android configuration secret is not set; building without Firebase app configuration."
+          fi
       # Generates the wrapper (not committed) then builds the debug APK.
       - name: Build debug APK
         working-directory: android-managed
