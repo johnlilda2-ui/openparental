@@ -23,6 +23,10 @@
         "./src/*"
       ]
     },
-    "rootDir": "./src"
+    "rootDir": "./src",
+    "types": [
+      "node",
+      "jest"
+    ]
   }
 }
