@@ -23,6 +23,8 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // MoniiRepository uses BuildConfig.VERSION_NAME for device registration.
+        buildConfig = true
     }
 
     buildTypes {
