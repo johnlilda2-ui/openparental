@@ -47,12 +47,18 @@ jobs:
           else
             echo "Firebase Android configuration secret is not set; building without Firebase app configuration."
           fi
-      # Generates the wrapper (not committed) then builds the debug APK.
       - name: Build debug APK
         working-directory: android-managed
         run: |
           gradle wrapper --gradle-version 8.9
           ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Upload child APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openparental-child-apk
+          path: android-managed/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
   parent-app:
     name: Parent app (analyze)
