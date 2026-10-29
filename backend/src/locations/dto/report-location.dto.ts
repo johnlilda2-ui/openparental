@@ -1,4 +1,10 @@
-import { IsISO8601, IsNumber, IsOptional, Max, Min } from 'class-validator';
+import {
+  IsISO8601,
+  IsNumber,
+  IsOptional,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ReportLocationDto {
   @IsNumber()
@@ -13,6 +19,8 @@ export class ReportLocationDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(100000)
   accuracyM?: number;
 
   @IsOptional()
