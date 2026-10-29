@@ -41,10 +41,12 @@ export class LocationsService {
     limit = 100,
   ): Promise<Location[]> {
     await this.devices.getForFamily(familyId, deviceId); // ownership
+    const safeLimit =
+      Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, 500) : 100;
     return this.prisma.location.findMany({
       where: { deviceId },
       orderBy: { occurredAt: 'desc' },
-      take: Math.min(limit, 500),
+      take: safeLimit,
     });
   }
 }
