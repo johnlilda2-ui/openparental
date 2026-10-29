@@ -110,12 +110,18 @@ class ApiClient {
 
   // ---- commands ----
 
-  Future<void> sendCommand(String deviceId, String type,
+  Future<CommandInfo> sendCommand(String deviceId, String type,
       [Map<String, dynamic>? payload]) async {
-    await _dio.post<dynamic>('/devices/$deviceId/commands', data: {
+    final r = await _dio.post<dynamic>('/devices/$deviceId/commands', data: {
       'type': type,
       if (payload != null) 'payload': payload,
     });
+    return CommandInfo.fromJson(Map<String, dynamic>.from(r.data as Map));
+  }
+
+  Future<CommandInfo> commandStatus(String id) async {
+    final r = await _dio.get<dynamic>('/commands/$id');
+    return CommandInfo.fromJson(Map<String, dynamic>.from(r.data as Map));
   }
 
   // ---- policy ----
