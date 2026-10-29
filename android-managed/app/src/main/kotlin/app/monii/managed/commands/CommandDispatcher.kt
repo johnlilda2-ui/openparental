@@ -1,6 +1,7 @@
 package app.monii.managed.commands
 
 import android.content.Context
+import android.util.Log
 import app.monii.managed.admin.AdminManager
 import app.monii.managed.data.PolicyStore
 import app.monii.managed.net.CommandDto
@@ -19,12 +20,23 @@ class CommandDispatcher(
     suspend fun syncAndExecute(): Int {
         val commands = repo.pullCommands()
         for (command in commands) {
-            runCatching { repo.ack(command.id) }
+            // Apply first, then report a terminal result. If the process dies or
+            // reporting fails before the result reaches the server, the command
+            // stays pending and is replayed on the next sync. SET_POLICY is
+            // idempotent, so this is safer than acknowledging before execution.
             val outcome = runCatching { execute(command) }
-            if (outcome.isSuccess) {
-                repo.result(command.id, outcome.getOrNull(), null)
-            } else {
-                repo.result(command.id, null, outcome.exceptionOrNull()?.message ?: "error")
+            runCatching {
+                if (outcome.isSuccess) {
+                    repo.result(command.id, outcome.getOrNull(), null)
+                } else {
+                    repo.result(
+                        command.id,
+                        null,
+                        outcome.exceptionOrNull()?.message ?: "error",
+                    )
+                }
+            }.onFailure {
+                Log.w(TAG, "Could not report command ${command.id}; it will retry on sync", it)
             }
         }
         return commands.size
@@ -48,4 +60,8 @@ class CommandDispatcher(
             "REQUEST_LOCATION" -> mapOf("requested" to true) // Phase 6 wires the actual fix
             else -> mapOf("ignored" to command.type)
         }
+
+    companion object {
+        private const val TAG = "CommandDispatcher"
+    }
 }
