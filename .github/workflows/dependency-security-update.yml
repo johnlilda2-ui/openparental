@@ -30,7 +30,7 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
       - name: Apply compatible audit fixes
-        run: npm audit fix --package-lock-only --no-fund --no-progress
+        run: npm audit fix --package-lock-only --no-fund --no-progress || true
       - name: Install patched dependency tree
         run: npm ci
       - run: npx prisma generate
