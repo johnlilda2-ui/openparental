@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { AuditService } from '../audit/audit.service';
@@ -60,6 +60,7 @@ describe('CommandsService', () => {
       prisma.command.findUnique.mockResolvedValue(null);
       prisma.command.create.mockResolvedValue({
         id: 'c1',
+        deviceId: 'd1',
         type: 'LOCK',
         state: 'QUEUED',
       });
@@ -71,19 +72,55 @@ describe('CommandsService', () => {
       expect(fcm.sendData).toHaveBeenCalledWith(
         'tok',
         expect.objectContaining({ kind: 'command', commandId: 'c1' }),
-        true, // LOCK is high priority
+        true,
       );
       expect(audit.log).toHaveBeenCalled();
     });
 
-    it('is idempotent: an existing key returns the existing command', async () => {
-      prisma.command.findUnique.mockResolvedValue({ id: 'c0', state: 'ACKED' });
+    it('is idempotent for the same device and command type', async () => {
+      prisma.command.findUnique.mockResolvedValue({
+        id: 'c0',
+        deviceId: 'd1',
+        type: 'PING',
+        state: 'ACKED',
+      });
       const res = await service.enqueue('f1', 'd1', {
         type: 'PING' as never,
         idempotencyKey: 'dup',
       });
       expect(res.id).toBe('c0');
       expect(prisma.command.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects an idempotency key that belongs to another device', async () => {
+      prisma.command.findUnique.mockResolvedValue({
+        id: 'c0',
+        deviceId: 'd2',
+        type: 'PING',
+        state: 'ACKED',
+      });
+      await expect(
+        service.enqueue('f1', 'd1', {
+          type: 'PING' as never,
+          idempotencyKey: 'cross-device-key',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(prisma.command.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects reuse of a key for a different command type', async () => {
+      prisma.command.findUnique.mockResolvedValue({
+        id: 'c0',
+        deviceId: 'd1',
+        type: 'PING',
+        state: 'ACKED',
+      });
+      await expect(
+        service.enqueue('f1', 'd1', {
+          type: 'LOCK' as never,
+          idempotencyKey: 'same-device-other-command',
+        }),
+      ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('stays QUEUED when the device has no FCM token', async () => {
@@ -144,14 +181,34 @@ describe('CommandsService', () => {
         }),
       );
     });
+
+    it('does not replace an expired command state with a late result', async () => {
+      prisma.command.findFirst.mockResolvedValue({ id: 'c1', state: 'EXPIRED' });
+      const res = await service.complete('d1', 'c1', { result: { ok: true } });
+      expect(res.state).toBe('EXPIRED');
+      expect(prisma.command.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('pullPending', () => {
-    it('expires stale commands then returns the active ones', async () => {
+    it('expires stale queued, sent, and acknowledged commands before listing pending ones', async () => {
       prisma.command.updateMany.mockResolvedValue({ count: 1 });
       prisma.command.findMany.mockResolvedValue([{ id: 'c1', state: 'QUEUED' }]);
       const res = await service.pullPending('d1');
-      expect(prisma.command.updateMany).toHaveBeenCalled();
+      expect(prisma.command.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({ state: { in: ['QUEUED', 'SENT'] } }),
+              expect.objectContaining({ state: 'ACKED' }),
+            ]),
+          }),
+          data: expect.objectContaining({
+            state: 'EXPIRED',
+            error: expect.any(String),
+          }),
+        }),
+      );
       expect(res).toHaveLength(1);
     });
   });
