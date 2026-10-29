@@ -18,5 +18,6 @@ export default () => ({
   },
   fcm: {
     serviceAccountPath: process.env.FCM_SERVICE_ACCOUNT_PATH ?? '',
+    serviceAccountJson: process.env.FCM_SERVICE_ACCOUNT_JSON ?? '',
   },
 });
