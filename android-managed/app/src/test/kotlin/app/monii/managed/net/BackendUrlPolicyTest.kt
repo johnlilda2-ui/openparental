@@ -29,6 +29,13 @@ class BackendUrlPolicyTest {
     }
 
     @Test
+    fun rejects_cleartext_private_lan_backend() {
+        assertThrows(IllegalArgumentException::class.java) {
+            BackendUrlPolicy.normalize("http://192.168.1.20:3000")
+        }
+    }
+
+    @Test
     fun rejects_cleartext_remote_backend() {
         assertThrows(IllegalArgumentException::class.java) {
             BackendUrlPolicy.normalize("http://api.example.com")
