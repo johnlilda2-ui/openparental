@@ -4,10 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
-import { pairingCode, randomToken } from '../common/hash.util';
+import { pairingCode, randomToken, sha256 } from '../common/hash.util';
 import { PrismaService } from '../prisma/prisma.service';
 import { TokenService } from '../auth/token.service';
-import { DevicesService } from '../devices/devices.service';
 import { ClaimPairingDto } from './dto/claim-pairing.dto';
 import { CreatePairingDto } from './dto/create-pairing.dto';
 
@@ -31,7 +30,7 @@ export class PairingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly tokens: TokenService,
-    private readonly devices: DevicesService,
+    private readonly devices: import('../devices/devices.service').DevicesService,
     private readonly audit: AuditService,
   ) {}
 
@@ -55,7 +54,11 @@ export class PairingService {
     };
   }
 
-  /** Device claims a pairing (token = QR token or code). Mints a device token. */
+  /**
+   * Claim the pairing and create its device in one database transaction.
+   * The conditional status update is the concurrency gate: only one claimant
+   * can transition a still-pending, unexpired pairing to CLAIMED.
+   */
   async claim(dto: ClaimPairingDto): Promise<ClaimResult> {
     const pairing = await this.prisma.pairing.findFirst({
       where: { OR: [{ qrToken: dto.token }, { code: dto.token }] },
@@ -64,32 +67,63 @@ export class PairingService {
     if (pairing.status !== 'PENDING') {
       throw new BadRequestException('pairing already used');
     }
-    if (pairing.expiresAt.getTime() < Date.now()) {
-      await this.prisma.pairing.update({
-        where: { id: pairing.id },
+
+    const now = new Date();
+    if (pairing.expiresAt.getTime() < now.getTime()) {
+      await this.prisma.pairing.updateMany({
+        where: { id: pairing.id, status: 'PENDING' },
         data: { status: 'EXPIRED' },
       });
       throw new BadRequestException('pairing expired');
     }
 
-    const { device, deviceSecret } = await this.devices.createForPairing(
-      pairing.familyId,
-      { ...dto, deviceName: dto.deviceName ?? pairing.deviceName ?? undefined },
-    );
-    const deviceToken = await this.tokens.signDevice(device.id, pairing.familyId);
+    const deviceSecret = randomToken();
+    const result = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.pairing.updateMany({
+        where: {
+          id: pairing.id,
+          status: 'PENDING',
+          expiresAt: { gt: now },
+        },
+        data: { status: 'CLAIMED' },
+      });
 
-    await this.prisma.pairing.update({
-      where: { id: pairing.id },
-      data: { status: 'CLAIMED', claimedDeviceId: device.id },
+      if (claimed.count !== 1) {
+        throw new BadRequestException('pairing already used or expired');
+      }
+
+      const device = await tx.device.create({
+        data: {
+          familyId: pairing.familyId,
+          name: dto.deviceName ?? pairing.deviceName ?? dto.model ?? 'Child device',
+          manufacturer: dto.manufacturer,
+          model: dto.model,
+          osVersion: dto.osVersion,
+          appVersion: dto.appVersion,
+          fcmToken: dto.fcmToken,
+          secretHash: sha256(deviceSecret),
+          status: 'ONLINE',
+          lastSeenAt: now,
+        },
+      });
+
+      await tx.pairing.update({
+        where: { id: pairing.id },
+        data: { claimedDeviceId: device.id },
+      });
+
+      return device;
     });
+
+    const deviceToken = await this.tokens.signDevice(result.id, pairing.familyId);
     await this.audit.log({
       familyId: pairing.familyId,
-      actor: device.id,
+      actor: result.id,
       action: 'device_paired',
-      data: { pairingId: pairing.id, model: device.model ?? undefined },
+      data: { pairingId: pairing.id, model: result.model ?? undefined },
     });
 
-    return { deviceId: device.id, deviceToken, deviceSecret };
+    return { deviceId: result.id, deviceToken, deviceSecret };
   }
 
   /** Parent polls pairing status while the child sets up the device. */
