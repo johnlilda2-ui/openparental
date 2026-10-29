@@ -24,11 +24,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: '24.11.1'
+          node-version: '24.15.0'
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - name: Sync package lock with declared security overrides
-        run: npm install --package-lock-only --no-fund --no-progress
+      - name: Rebuild lockfile from declared dependency graph
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-fund --no-progress
       - name: Install locked dependencies
         run: npm ci
       - name: Apply compatible audit fixes
