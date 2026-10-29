@@ -3,8 +3,10 @@ package app.monii.managed.commands
 import android.content.Context
 import app.monii.managed.admin.AdminManager
 import app.monii.managed.data.PolicyStore
+import app.monii.managed.enforcement.PolicyRules
 import app.monii.managed.location.LocationReporter
 import app.monii.managed.net.CommandDto
+import app.monii.managed.permissions.SpecialAccess
 import app.monii.managed.repo.MoniiRepository
 
 /**
@@ -49,8 +51,36 @@ class CommandDispatcher(
                 "UNLOCK is not supported for this enrollment; Android does not allow this app to force-unlock the device",
             )
             "SET_POLICY" -> {
-                PolicyStore.save(context, command.payload)
-                mapOf("applied" to true)
+                val payload = command.payload
+                    ?: throw IllegalArgumentException("SET_POLICY is missing its payload")
+                val rawRules = payload["rules"] as? Map<*, *>
+                    ?: throw IllegalArgumentException("SET_POLICY payload must contain a rules object")
+                val rules = rawRules.entries.associate { (key, value) ->
+                    val name = key as? String
+                        ?: throw IllegalArgumentException("Policy rule names must be strings")
+                    name to value
+                }
+                val parsed = PolicyRules.validate(rules)
+                val hasEnforceableRules =
+                    parsed.blockedApps.isNotEmpty() ||
+                    parsed.appLimits.isNotEmpty() ||
+                    parsed.schedules.any { it.blockAll }
+                if (hasEnforceableRules && !SpecialAccess.isAccessibilityEnabled(context)) {
+                    throw IllegalStateException(
+                        "Policy not applied: enable OpenParental Accessibility access on the child device first",
+                    )
+                }
+                if (parsed.appLimits.isNotEmpty() && !SpecialAccess.isUsageAccessGranted(context)) {
+                    throw IllegalStateException(
+                        "Policy not applied: enable Usage access on the child device to enforce daily app limits",
+                    )
+                }
+                PolicyStore.save(context, rules)
+                mapOf(
+                    "saved" to true,
+                    "enforcementReady" to true,
+                    "version" to payload["version"],
+                )
             }
             "PING" -> mapOf("pong" to true)
             "REQUEST_LOCATION" -> LocationReporter(context).reportCurrent(repo)
