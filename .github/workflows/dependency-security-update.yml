@@ -58,9 +58,11 @@ jobs:
               installedRange: item.range,
               fixAvailable: item.fixAvailable,
               dependents: item.effects,
-              advisories: (item.via ?? [])
-                .filter(v => typeof v === 'object')
-                .map(v => ({ title: v.title, url: v.url, range: v.range })),
+              via: (item.via ?? []).map(v =>
+                typeof v === 'string'
+                  ? v
+                  : { title: v.title, url: v.url, range: v.range },
+              ),
             }));
           }
           NODE
