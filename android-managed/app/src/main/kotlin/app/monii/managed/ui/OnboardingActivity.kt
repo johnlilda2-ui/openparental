@@ -44,6 +44,9 @@ class OnboardingActivity : AppCompatActivity() {
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
 
+    private val locationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
+
     private val vpnConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) startVpn()
@@ -56,6 +59,14 @@ class OnboardingActivity : AppCompatActivity() {
 
         val admin = AdminManager(this)
         steps = listOf(
+            Step(
+                "📍",
+                "Location sharing",
+                "Allow location access so a paired parent can request the child's current location. You can deny this and use other features.",
+                { locationGranted() },
+                { requestLocation() },
+                optional = true,
+            ),
             Step(
                 "🔔",
                 "Notifications",
@@ -179,6 +190,19 @@ class OnboardingActivity : AppCompatActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
+    }
+
+    private fun locationGranted(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestLocation() {
+        locationPermission.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ),
+        )
     }
 
     private fun isIgnoringBattery(): Boolean {
