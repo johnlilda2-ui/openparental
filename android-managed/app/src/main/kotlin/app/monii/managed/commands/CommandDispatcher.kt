@@ -22,7 +22,10 @@ class CommandDispatcher(
     private val repo: MoniiRepository,
     private val admin: AdminManager,
 ) {
+    private val resultQueue = CommandResultQueue(context)
+
     suspend fun syncAndExecute(): Int = dispatchMutex.withLock {
+        flushPendingResults()
         val commands = repo.pullCommands()
         var processed = 0
         for (command in commands) {
@@ -37,18 +40,33 @@ class CommandDispatcher(
             if (ack.state != "ACKED") continue
 
             val outcome = runCatching { execute(command) }
-            if (outcome.isSuccess) {
-                repo.result(command.id, outcome.getOrNull(), null)
-            } else {
-                repo.result(
-                    command.id,
-                    null,
-                    outcome.exceptionOrNull()?.message ?: "Command failed",
-                )
-            }
+            resultQueue.enqueue(
+                if (outcome.isSuccess) {
+                    PendingCommandResult(command.id, outcome.getOrNull(), null)
+                } else {
+                    PendingCommandResult(
+                        command.id,
+                        null,
+                        outcome.exceptionOrNull()?.message ?: "Command failed",
+                    )
+                },
+            )
+            // Keep the result durable until the server accepts it. If the
+            // response is lost after server commit, retry is idempotent.
+            flushPendingResults()
             processed++
         }
         processed
+    }
+
+    private suspend fun flushPendingResults() {
+        for (item in resultQueue.all()) {
+            val posted = runCatching {
+                repo.result(item.commandId, item.result, item.error)
+            }.isSuccess
+            if (!posted) break
+            resultQueue.remove(item.commandId)
+        }
     }
 
     private suspend fun execute(command: CommandDto): Map<String, Any?> =
