@@ -1,19 +1,16 @@
 name: Dependency security update
 
-# This one-time maintenance workflow applies npm's compatible fixes to the
-# backend lockfile. It runs only on the audited maintenance branch (never on
-# pull_request events), validates the resolved tree, then commits only the
-# lockfile after build and tests pass.
+# Run dependency maintenance only when explicitly requested. Automatically
+# rewriting the lockfile on every branch push creates noisy commits and can
+# race with feature work.
 on:
-  push:
-    branches: ['feature/android-fresh-location-command']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   update-lockfile:
-    if: ${{ !contains(github.event.head_commit.message, '[auto-deps]') }}
     runs-on: ubuntu-latest
     defaults:
       run:
