@@ -42,10 +42,13 @@ export class LocationsController {
     @Param('deviceId') deviceId: string,
     @Query('limit') limit?: string,
   ) {
-    return this.locations.history(
-      user.familyId,
-      deviceId,
-      limit ? parseInt(limit, 10) : undefined,
-    );
+    const parsedLimit =
+      limit !== undefined && /^\d+$/.test(limit) ? Number(limit) : undefined;
+    const safeLimit =
+      parsedLimit !== undefined && Number.isSafeInteger(parsedLimit) &&
+      parsedLimit > 0
+        ? Math.min(parsedLimit, 500)
+        : 100;
+    return this.locations.history(user.familyId, deviceId, safeLimit);
   }
 }

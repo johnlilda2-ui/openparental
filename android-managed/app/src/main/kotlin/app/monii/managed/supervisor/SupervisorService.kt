@@ -36,9 +36,6 @@ import kotlinx.coroutines.launch
  * #1) AND, once paired, runs a fast sync loop every 60s: heartbeat + flush events
  * + pull and execute commands. WorkManager (SyncWorker) is the slower backstop for
  * when the OEM kills this service.
- *
- *   onStartCommand ─► startForeground ─► survival heartbeat (15s, local)
- *                                     └► sync loop (60s, backend) when paired
  */
 class SupervisorService : Service() {
 
@@ -55,6 +52,7 @@ class SupervisorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        activeInstance = this
         createChannel()
     }
 
@@ -111,6 +109,7 @@ class SupervisorService : Service() {
 
     override fun onDestroy() {
         running = false
+        if (activeInstance === this) activeInstance = null
         handler.removeCallbacks(heartbeat)
         scope.cancel()
         SurvivalLog.record(this, SurvivalLog.DESTROY)
@@ -119,19 +118,33 @@ class SupervisorService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun startForegroundCompat() {
+    private fun startForegroundCompat(locationMode: Boolean = false) {
         val notif: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.fgs_title))
-            .setContentText(getString(R.string.fgs_text))
+            .setContentText(
+                if (locationMode) "Sharing current location with your paired parent"
+                else getString(R.string.fgs_text),
+            )
             .setSmallIcon(R.drawable.ic_launcher)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-        } else {
-            startForeground(NOTIF_ID, notif)
+
+        when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> {
+                var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                if (locationMode) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                startForeground(NOTIF_ID, notif, types)
+            }
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && locationMode -> {
+                startForeground(NOTIF_ID, notif, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            }
+            else -> startForeground(NOTIF_ID, notif)
         }
+    }
+
+    private fun setLocationForeground(enabled: Boolean) {
+        startForegroundCompat(locationMode = enabled)
     }
 
     private fun createChannel() {
@@ -142,7 +155,7 @@ class SupervisorService : Service() {
                 "OpenParental supervisor",
                 NotificationManager.IMPORTANCE_LOW,
             )
-            ch.description = "Keeps OpenParental running."
+            ch.description = "Shows OpenParental protection status and requested location sharing."
             mgr.createNotificationChannel(ch)
         }
     }
@@ -156,6 +169,22 @@ class SupervisorService : Service() {
         @Volatile
         var running = false
             private set
+
+        @Volatile
+        private var activeInstance: SupervisorService? = null
+
+        fun isActive(): Boolean = activeInstance != null
+
+        suspend fun <T> withLocationForeground(block: suspend () -> T): T {
+            val service = activeInstance
+                ?: throw IllegalStateException("OpenParental protection service is not running; reopen the child app and retry")
+            service.setLocationForeground(true)
+            try {
+                return block()
+            } finally {
+                service.setLocationForeground(false)
+            }
+        }
 
         fun start(context: Context) {
             val i = Intent(context, SupervisorService::class.java)

@@ -55,7 +55,11 @@ export class PairingService {
     };
   }
 
-  /** Device claims a pairing (token = QR token or code). Mints a device token. */
+  /**
+   * Claims a pairing in one transaction. The conditional PENDING -> CLAIMED
+   * update is the race guard: concurrent devices cannot both enroll against the
+   * same code. Device creation and assignment roll back if token minting fails.
+   */
   async claim(dto: ClaimPairingDto): Promise<ClaimResult> {
     const pairing = await this.prisma.pairing.findFirst({
       where: { OR: [{ qrToken: dto.token }, { code: dto.token }] },
@@ -64,32 +68,61 @@ export class PairingService {
     if (pairing.status !== 'PENDING') {
       throw new BadRequestException('pairing already used');
     }
-    if (pairing.expiresAt.getTime() < Date.now()) {
-      await this.prisma.pairing.update({
-        where: { id: pairing.id },
+
+    const now = new Date();
+    if (pairing.expiresAt.getTime() < now.getTime()) {
+      await this.prisma.pairing.updateMany({
+        where: { id: pairing.id, status: 'PENDING', expiresAt: { lt: now } },
         data: { status: 'EXPIRED' },
       });
       throw new BadRequestException('pairing expired');
     }
 
-    const { device, deviceSecret } = await this.devices.createForPairing(
-      pairing.familyId,
-      { ...dto, deviceName: dto.deviceName ?? pairing.deviceName ?? undefined },
-    );
-    const deviceToken = await this.tokens.signDevice(device.id, pairing.familyId);
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const reservation = await tx.pairing.updateMany({
+        where: {
+          id: pairing.id,
+          status: 'PENDING',
+          expiresAt: { gt: new Date() },
+        },
+        data: { status: 'CLAIMED' },
+      });
+      if (reservation.count !== 1) {
+        throw new BadRequestException(
+          'pairing was already claimed or has expired',
+        );
+      }
 
-    await this.prisma.pairing.update({
-      where: { id: pairing.id },
-      data: { status: 'CLAIMED', claimedDeviceId: device.id },
+      const { device, deviceSecret } = await this.devices.createForPairing(
+        pairing.familyId,
+        {
+          ...dto,
+          deviceName: dto.deviceName ?? pairing.deviceName ?? undefined,
+        },
+        tx,
+      );
+      const deviceToken = await this.tokens.signDevice(device.id, pairing.familyId);
+      await tx.pairing.update({
+        where: { id: pairing.id },
+        data: { claimedDeviceId: device.id },
+      });
+      return { device, deviceToken, deviceSecret };
     });
+
+    // Pairing has already committed; telemetry failure must not strand the
+    // successful child enrollment without returning its one-time device secret.
     await this.audit.log({
       familyId: pairing.familyId,
-      actor: device.id,
+      actor: claimed.device.id,
       action: 'device_paired',
-      data: { pairingId: pairing.id, model: device.model ?? undefined },
-    });
+      data: { pairingId: pairing.id, model: claimed.device.model ?? undefined },
+    }).catch(() => undefined);
 
-    return { deviceId: device.id, deviceToken, deviceSecret };
+    return {
+      deviceId: claimed.device.id,
+      deviceToken: claimed.deviceToken,
+      deviceSecret: claimed.deviceSecret,
+    };
   }
 
   /** Parent polls pairing status while the child sets up the device. */

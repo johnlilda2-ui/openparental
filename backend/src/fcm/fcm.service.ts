@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as admin from 'firebase-admin';
+import { App, cert, initializeApp } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 import { readFileSync } from 'fs';
 
 /**
@@ -14,7 +15,7 @@ import { readFileSync } from 'fs';
 @Injectable()
 export class FcmService implements OnModuleInit {
   private readonly logger = new Logger(FcmService.name);
-  private app: admin.app.App | null = null;
+  private app: App | null = null;
 
   constructor(private readonly config: ConfigService) {}
 
@@ -26,8 +27,8 @@ export class FcmService implements OnModuleInit {
     }
     try {
       const serviceAccount = JSON.parse(readFileSync(path, 'utf8'));
-      this.app = admin.initializeApp(
-        { credential: admin.credential.cert(serviceAccount) },
+      this.app = initializeApp(
+        { credential: cert(serviceAccount) },
         'monii',
       );
       this.logger.log('FCM initialized.');
@@ -51,7 +52,7 @@ export class FcmService implements OnModuleInit {
       return false;
     }
     try {
-      await admin.messaging(this.app).send({
+      await getMessaging(this.app).send({
         token,
         data,
         android: { priority: highPriority ? 'high' : 'normal' },

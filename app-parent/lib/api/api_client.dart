@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'models.dart';
+import 'backend_url_policy.dart';
 
 /// Talks to the monii backend. Adds the access token, and on a 401 silently
 /// refreshes (rotating refresh token) and retries the failed request once.
@@ -9,8 +10,12 @@ class ApiClient {
   final Dio _dio;
   final FlutterSecureStorage _storage;
   final String baseUrl;
+  Future<bool>? _refreshFuture;
 
-  ApiClient({required this.baseUrl, FlutterSecureStorage? storage})
+  ApiClient({required String baseUrl, FlutterSecureStorage? storage})
+      : this._normalized(BackendUrlPolicy.normalize(baseUrl), storage);
+
+  ApiClient._normalized(this.baseUrl, FlutterSecureStorage? storage)
       : _storage = storage ?? const FlutterSecureStorage(),
         _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
@@ -26,15 +31,30 @@ class ApiClient {
         handler.next(options);
       },
       onError: (e, handler) async {
-        if (e.response?.statusCode == 401 && await _tryRefresh()) {
+        final path = e.requestOptions.uri.path;
+        final isAuthEndpoint = path.endsWith('/auth/login') ||
+            path.endsWith('/auth/register') ||
+            path.endsWith('/auth/refresh');
+        final alreadyRetried =
+            e.requestOptions.extra['_retriedAfterRefresh'] == true;
+
+        if (e.response?.statusCode == 401 &&
+            !isAuthEndpoint &&
+            !alreadyRetried &&
+            await _tryRefresh()) {
           try {
             final req = e.requestOptions;
+            req.extra['_retriedAfterRefresh'] = true;
             final token = await _storage.read(key: 'access');
-            req.headers['Authorization'] = 'Bearer $token';
+            if (token != null) {
+              req.headers['Authorization'] = 'Bearer $token';
+            } else {
+              req.headers.remove('Authorization');
+            }
             final response = await _dio.fetch<dynamic>(req);
             return handler.resolve(response);
           } catch (_) {
-            // fall through to the original error
+            // Preserve the original request error if the retry also fails.
           }
         }
         handler.next(e);
@@ -74,7 +94,21 @@ class ApiClient {
     return r;
   }
 
-  Future<bool> _tryRefresh() async {
+  /// Shares one refresh attempt across concurrent 401 responses. The backend
+  /// rotates refresh tokens atomically, so parallel refresh calls would make
+  /// all but one caller fail with a replay rejection.
+  Future<bool> _tryRefresh() {
+    final current = _refreshFuture;
+    if (current != null) return current;
+
+    final future = _performRefresh();
+    _refreshFuture = future;
+    return future.whenComplete(() {
+      if (identical(_refreshFuture, future)) _refreshFuture = null;
+    });
+  }
+
+  Future<bool> _performRefresh() async {
     final refresh = await _storage.read(key: 'refresh');
     if (refresh == null) return false;
     try {
@@ -82,6 +116,15 @@ class ApiClient {
           .post<dynamic>('/auth/refresh', data: {'refreshToken': refresh});
       await _persist(AuthResult.fromJson(r.data as Map<String, dynamic>));
       return true;
+    } on DioException catch (error) {
+      // Invalid/revoked refresh tokens require sign-in again. Transient network
+      // or server errors should not destroy an otherwise recoverable session.
+      if (error.response?.statusCode == 401 ||
+          error.response?.statusCode == 403) {
+        await _storage.delete(key: 'access');
+        await _storage.delete(key: 'refresh');
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -110,12 +153,18 @@ class ApiClient {
 
   // ---- commands ----
 
-  Future<void> sendCommand(String deviceId, String type,
+  Future<CommandInfo> sendCommand(String deviceId, String type,
       [Map<String, dynamic>? payload]) async {
-    await _dio.post<dynamic>('/devices/$deviceId/commands', data: {
+    final r = await _dio.post<dynamic>('/devices/$deviceId/commands', data: {
       'type': type,
       if (payload != null) 'payload': payload,
     });
+    return CommandInfo.fromJson(Map<String, dynamic>.from(r.data as Map));
+  }
+
+  Future<CommandInfo> commandStatus(String id) async {
+    final r = await _dio.get<dynamic>('/commands/$id');
+    return CommandInfo.fromJson(Map<String, dynamic>.from(r.data as Map));
   }
 
   // ---- policy ----

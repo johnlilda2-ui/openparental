@@ -24,7 +24,7 @@ import app.monii.managed.vpn.VpnFilterService
 /**
  * Guided special-access setup. Each step card opens the right Settings screen
  * and the list re-checks its status every time the user returns. Optional steps
- * (OEM autostart, notifications, content filter) don't block "all set".
+ * don't block other features if the family declines them.
  */
 class OnboardingActivity : AppCompatActivity() {
 
@@ -44,6 +44,12 @@ class OnboardingActivity : AppCompatActivity() {
     private val notifPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
 
+    private val locationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
+
+    private val backgroundLocationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { refresh() }
+
     private val vpnConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             if (result.resultCode == RESULT_OK) startVpn()
@@ -55,60 +61,85 @@ class OnboardingActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         val admin = AdminManager(this)
-        steps = listOf(
+        val setupSteps = mutableListOf(
             Step(
-                "🔔",
-                "Notifications",
-                "Let OpenParental show its ongoing status.",
-                { notificationsGranted() },
-                { requestNotifications() },
-                optional = true,
-            ),
-            Step(
-                "🔋",
-                "Unrestricted battery",
-                "Stops the system from killing OpenParental in the background.",
-                { isIgnoringBattery() },
-                { requestIgnoreBattery() },
-            ),
-            Step(
-                "🛡️",
-                "Accessibility",
-                "Lets OpenParental enforce app and time limits.",
-                { SpecialAccess.isAccessibilityEnabled(this) },
-                { startSafe(SpecialAccess.accessibilitySettingsIntent()) },
-            ),
-            Step(
-                "📊",
-                "Usage access",
-                "Lets OpenParental measure screen time.",
-                { SpecialAccess.isUsageAccessGranted(this) },
-                { startSafe(SpecialAccess.usageAccessSettingsIntent()) },
-            ),
-            Step(
-                "🔒",
-                "Device admin",
-                "Lets OpenParental lock the device remotely.",
-                { admin.isActive() },
-                { startSafe(admin.enableIntent()) },
-            ),
-            Step(
-                "🌐",
-                "Content filter",
-                "Block adult & unsafe sites with a private on-device DNS filter.",
-                { false },
-                { enableContentFilter() },
-                optional = true,
-            ),
-            Step(
-                "🚀",
-                "Auto-start (some phones)",
-                "On Xiaomi/Oppo/Vivo, allow OpenParental to start on boot.",
-                { false },
-                { openOemAutostart() },
+                "📍",
+                "Location sharing",
+                "Allow location access so a paired parent can request the child's current location. You can deny this and use other features.",
+                { locationGranted() },
+                { requestLocation() },
                 optional = true,
             ),
         )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            setupSteps.add(
+                Step(
+                    "🗺️",
+                    "Background location for remote requests",
+                    "To receive a location request while this app is in the background, set OpenParental Location permission to 'Allow all the time'. Android 11+ requires changing this in Settings.",
+                    { backgroundLocationGranted() },
+                    { requestBackgroundLocation() },
+                    optional = true,
+                ),
+            )
+        }
+        setupSteps.addAll(
+            listOf(
+                Step(
+                    "🔔",
+                    "Notifications",
+                    "Let OpenParental show its ongoing status.",
+                    { notificationsGranted() },
+                    { requestNotifications() },
+                    optional = true,
+                ),
+                Step(
+                    "🔋",
+                    "Unrestricted battery",
+                    "Stops the system from killing OpenParental in the background.",
+                    { isIgnoringBattery() },
+                    { requestIgnoreBattery() },
+                ),
+                Step(
+                    "🛡️",
+                    "Accessibility",
+                    "Lets OpenParental enforce app and time limits.",
+                    { SpecialAccess.isAccessibilityEnabled(this) },
+                    { startSafe(SpecialAccess.accessibilitySettingsIntent()) },
+                ),
+                Step(
+                    "📊",
+                    "Usage access",
+                    "Lets OpenParental measure screen time.",
+                    { SpecialAccess.isUsageAccessGranted(this) },
+                    { startSafe(SpecialAccess.usageAccessSettingsIntent()) },
+                ),
+                Step(
+                    "🔒",
+                    "Device admin",
+                    "Lets OpenParental lock the device remotely.",
+                    { admin.isActive() },
+                    { startSafe(admin.enableIntent()) },
+                ),
+                Step(
+                    "🌐",
+                    "Content filter",
+                    "Block adult & unsafe sites with a private on-device DNS filter.",
+                    { false },
+                    { enableContentFilter() },
+                    optional = true,
+                ),
+                Step(
+                    "🚀",
+                    "Auto-start (some phones)",
+                    "On Xiaomi/Oppo/Vivo, allow OpenParental to start on boot.",
+                    { false },
+                    { openOemAutostart() },
+                    optional = true,
+                ),
+            ),
+        )
+        steps = setupSteps
         buildRows()
         binding.btnDone.setOnClickListener { finish() }
     }
@@ -178,6 +209,35 @@ class OnboardingActivity : AppCompatActivity() {
     private fun requestNotifications() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
+    private fun locationGranted(): Boolean =
+        checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestLocation() {
+        locationPermission.launch(
+            arrayOf(
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            ),
+        )
+    }
+
+    private fun backgroundLocationGranted(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+            checkSelfPermission(Manifest.permission.ACCESS_BACKGROUND_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+
+    private fun requestBackgroundLocation() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || backgroundLocationGranted()) return
+        if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+            backgroundLocationPermission.launch(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
+        } else {
+            startSafe(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+            )
         }
     }
 

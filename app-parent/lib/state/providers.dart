@@ -4,9 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 
-/// Backend base URL (editable on the login screen for dev).
+/// Backend URL used for local emulator development unless the parent has
+/// configured a persistent self-hosted HTTPS endpoint.
+const defaultBackendUrl = 'http://10.0.2.2:3000';
+
 final baseUrlProvider =
-    StateProvider<String>((ref) => 'http://192.168.1.5:3000');
+    StateProvider<String>((ref) => defaultBackendUrl);
 
 final apiProvider = Provider<ApiClient>((ref) {
   final base = ref.watch(baseUrlProvider);

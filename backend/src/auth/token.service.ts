@@ -14,7 +14,19 @@ export class TokenService {
     private readonly jwt: JwtService,
     config: ConfigService,
   ) {
-    this.secret = config.get<string>('jwt.secret') ?? 'dev-secret-change-me';
+    const nodeEnv =
+      config.get<string>('nodeEnv') ?? process.env.NODE_ENV ?? 'development';
+    const configuredSecret = config.get<string>('jwt.secret');
+    if (
+      nodeEnv === 'production' &&
+      (!configuredSecret || configuredSecret.length < 32)
+    ) {
+      throw new Error(
+        'JWT_SECRET must be configured with at least 32 characters in production.',
+      );
+    }
+
+    this.secret = configuredSecret ?? 'dev-secret-change-me';
     this.accessTtl = config.get<number>('jwt.accessTtl') ?? 900;
     this.refreshTtl = config.get<number>('jwt.refreshTtl') ?? 2592000;
     this.deviceTtl = config.get<number>('jwt.deviceTtl') ?? 31536000;

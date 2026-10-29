@@ -9,7 +9,16 @@ import { PairingService } from './pairing.service';
 describe('PairingService', () => {
   let service: PairingService;
   let prisma: {
-    pairing: { create: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    pairing: {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    $transaction: jest.Mock;
+  };
+  let tx: {
+    pairing: { update: jest.Mock; updateMany: jest.Mock };
   };
   let tokens: { signDevice: jest.Mock };
   let devices: { createForPairing: jest.Mock };
@@ -17,8 +26,21 @@ describe('PairingService', () => {
 
   beforeEach(async () => {
     prisma = {
-      pairing: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      pairing: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      $transaction: jest.fn(),
     };
+    tx = {
+      pairing: {
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+    };
+    prisma.$transaction.mockImplementation((callback) => callback(tx));
     tokens = { signDevice: jest.fn().mockResolvedValue('device-token') };
     devices = {
       createForPairing: jest.fn().mockResolvedValue({
@@ -50,7 +72,7 @@ describe('PairingService', () => {
     expect(res.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('claim mints a device token and marks the pairing CLAIMED', async () => {
+  it('claims only once inside a transaction and returns device credentials', async () => {
     prisma.pairing.findFirst.mockResolvedValue({
       id: 'p1',
       familyId: 'f1',
@@ -58,15 +80,45 @@ describe('PairingService', () => {
       expiresAt: new Date(Date.now() + 60_000),
       deviceName: null,
     });
-    prisma.pairing.update.mockResolvedValue({});
 
     const res = await service.claim({ token: 'tok', model: 'Pixel' });
     expect(res.deviceToken).toBe('device-token');
     expect(res.deviceId).toBe('d1');
-    expect(prisma.pairing.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { status: 'CLAIMED', claimedDeviceId: 'd1' },
+    expect(res.deviceSecret).toBe('secret');
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.pairing.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'p1',
+        status: 'PENDING',
+        expiresAt: expect.objectContaining({ gt: expect.any(Date) }),
+      }),
+      data: { status: 'CLAIMED' },
     });
+    expect(devices.createForPairing).toHaveBeenCalledWith(
+      'f1',
+      expect.objectContaining({ model: 'Pixel' }),
+      tx,
+    );
+    expect(tx.pairing.update).toHaveBeenCalledWith({
+      where: { id: 'p1' },
+      data: { claimedDeviceId: 'd1' },
+    });
+  });
+
+  it('rejects a simultaneous claim after the conditional reservation loses', async () => {
+    prisma.pairing.findFirst.mockResolvedValue({
+      id: 'p1',
+      familyId: 'f1',
+      status: 'PENDING',
+      expiresAt: new Date(Date.now() + 60_000),
+      deviceName: null,
+    });
+    tx.pairing.updateMany.mockResolvedValue({ count: 0 });
+
+    await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(devices.createForPairing).not.toHaveBeenCalled();
   });
 
   it('claim rejects an unknown token', async () => {
@@ -86,6 +138,7 @@ describe('PairingService', () => {
     await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('claim expires and rejects a stale pairing', async () => {
@@ -95,17 +148,21 @@ describe('PairingService', () => {
       status: 'PENDING',
       expiresAt: new Date(Date.now() - 1_000),
     });
-    prisma.pairing.update.mockResolvedValue({});
+    prisma.pairing.updateMany.mockResolvedValue({ count: 1 });
     await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(prisma.pairing.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
+    expect(prisma.pairing.updateMany).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        id: 'p1',
+        status: 'PENDING',
+        expiresAt: expect.objectContaining({ lt: expect.any(Date) }),
+      }),
       data: { status: 'EXPIRED' },
     });
   });
 
-  it('getStatus rejects a pairing from another family', async () => {
+  it('does not expose pairing secrets when the pairing belongs to another family', async () => {
     prisma.pairing.findFirst.mockResolvedValue(null);
     await expect(service.getStatus('f1', 'other')).rejects.toBeInstanceOf(
       NotFoundException,

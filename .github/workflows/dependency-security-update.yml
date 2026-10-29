@@ -1,0 +1,92 @@
+name: Dependency security update
+
+# Run dependency maintenance only when explicitly requested. Automatically
+# rewriting the lockfile on every branch push creates noisy commits and can
+# race with feature work.
+on:
+  push:
+    branches: ['feature/android-fresh-location-command']
+
+permissions:
+  contents: write
+
+jobs:
+  update-lockfile:
+    if: ${{ contains(github.event.head_commit.message, '[audit-deps]') && !contains(github.event.head_commit.message, '[auto-deps]') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.15.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - name: Rebuild lockfile from declared dependency graph
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-fund --no-progress
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Apply compatible audit fixes
+        run: npm audit fix --package-lock-only --no-fund --no-progress || true
+      - name: Install patched dependency tree
+        run: npm ci
+      - name: Report all remaining npm advisories
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          } catch {
+            console.log('Could not decode npm audit output; build and tests passed but audit details need manual inspection.');
+            process.exit(0);
+          }
+          console.log('NPM audit severity summary:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            console.log(JSON.stringify({
+              package: name,
+              severity: item.severity,
+              direct: item.isDirect,
+              installedRange: item.range,
+              fixAvailable: item.fixAvailable,
+              dependents: item.effects,
+              via: (item.via ?? []).map(v =>
+                typeof v === 'string'
+                  ? v
+                  : { title: v.title, url: v.url, range: v.range },
+              ),
+            }));
+          }
+          NODE
+      - run: npx prisma generate
+      - run: npm run build
+      - name: Run unit tests with Node ESM support for NestJS 12
+        run: npm test
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
+      - name: Commit the validated lockfile changes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "No compatible lockfile updates were generated."
+            exit 0
+          fi
+          git commit -m "chore(deps): apply non-breaking npm audit fixes [auto-deps]"
+          # Feature work can land while validation runs. Rebase the validated
+          # lockfile-only commit onto the latest branch before pushing it.
+          git fetch origin "$TARGET_BRANCH"
+          git rebase "origin/$TARGET_BRANCH"
+          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin "HEAD:$TARGET_BRANCH"

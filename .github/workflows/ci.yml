@@ -1,8 +1,13 @@
 name: CI
 
+# Avoid running duplicate push + pull_request pipelines for the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+
 on:
   push:
-    branches: [main, 'Suhaib3100/**']
+    branches: [main, 'Suhaib3100/**', 'feature/android-fresh-location-command']
   pull_request:
 
 jobs:
@@ -16,13 +21,44 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24.15.0'
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
+      - name: Report high and critical npm advisories
+        run: |
+          npm audit --json > npm-audit.json || true
+          node <<'NODE'
+          const fs = require('node:fs');
+          let report;
+          try {
+            report = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8'));
+          } catch {
+            console.log('npm audit did not return valid JSON; build and tests will continue, but advisory details need manual inspection.');
+            process.exit(0);
+          }
+          console.log('NPM audit severity summary:', JSON.stringify(report.metadata?.vulnerabilities ?? {}));
+          for (const [name, item] of Object.entries(report.vulnerabilities ?? {})) {
+            if (item.severity === 'high' || item.severity === 'critical') {
+              console.log(JSON.stringify({
+                package: name,
+                severity: item.severity,
+                direct: item.isDirect,
+                installedRange: item.range,
+                fixAvailable: item.fixAvailable,
+                advisories: (item.via ?? [])
+                  .filter(v => typeof v === 'object')
+                  .map(v => ({ title: v.title, url: v.url, range: v.range })),
+              }));
+            }
+          }
+          NODE
       - run: npx prisma generate
       - run: npm run build
-      - run: npm test
+      - name: Run unit tests with Node ESM support for NestJS 12
+        run: npm test
+        env:
+          NODE_OPTIONS: --experimental-vm-modules
 
   android-managed:
     name: Managed app (assembleDebug)
@@ -34,6 +70,11 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          # Override the action's legacy default "tools" package, which no longer exists.
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+      - name: Install Android SDK packages
+        run: sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
       # Generates the wrapper (not committed) then builds the debug APK.
       - name: Build debug APK
@@ -41,6 +82,13 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.9
           ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Upload debug APK for device testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: openparental-android-debug-apk
+          path: android-managed/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
 
   parent-app:
     name: Parent app (analyze)

@@ -1,4 +1,15 @@
-# android-managed — Spike #1: FGS survival
+# Android child app — OpenParental
+
+> **Project roadmap:** see [../ROADMAP.md](../ROADMAP.md) for the Android-first plan and evidence-based feature status. This README began as notes for the foreground-service survival spike; the app has since grown beyond that initial experiment. Do not use the historical spike description alone as the current feature inventory.
+
+## Current focus
+
+- Complete and verify the explicit fresh-location request from parent command through Android location fix to backend reporting.
+- Test permission grant/denial, disabled location, timeout, background limits and OEM battery behavior.
+- Treat source-level implementation as unverified until CI and real-device tests confirm it.
+
+## Historical spike notes
+
 
 A minimal app that does **nothing but stay alive** as a foreground service, so we
 can measure whether an always-on anchor survives Android 14/15 runtime caps and

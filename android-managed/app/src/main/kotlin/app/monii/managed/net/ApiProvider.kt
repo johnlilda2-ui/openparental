@@ -12,7 +12,7 @@ object ApiProvider {
 
     @Synchronized
     fun api(store: DeviceStore): MoniiApi {
-        val base = ensureSlash(store.baseUrl())
+        val base = BackendUrlPolicy.normalize(store.baseUrl())
         cached?.let { if (it.first == base) return it.second }
         val client = OkHttpClient.Builder()
             .addInterceptor(AuthInterceptor(store))
@@ -26,6 +26,4 @@ object ApiProvider {
         cached = base to api
         return api
     }
-
-    private fun ensureSlash(s: String): String = if (s.endsWith("/")) s else "$s/"
 }

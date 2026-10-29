@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
 import { TokenService } from '../../auth/token.service';
 
 function extractBearer(req: { headers?: Record<string, unknown> }): string | null {
@@ -13,10 +14,13 @@ function extractBearer(req: { headers?: Record<string, unknown> }): string | nul
   return scheme === 'Bearer' && value ? value : null;
 }
 
-/** Guards managed (child-device) routes. Requires a valid `device` token. */
+/** Guards managed (child-device) routes. Requires a current enrolled device. */
 @Injectable()
 export class DeviceAuthGuard implements CanActivate {
-  constructor(private readonly tokens: TokenService) {}
+  constructor(
+    private readonly tokens: TokenService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
@@ -32,7 +36,21 @@ export class DeviceAuthGuard implements CanActivate {
     if (payload.typ !== 'device') {
       throw new UnauthorizedException('wrong token type');
     }
-    req.device = { deviceId: payload.sub, familyId: payload.fid };
+    if (!payload.sub || !payload.fid) {
+      throw new UnauthorizedException('invalid device token claims');
+    }
+
+    // Device tokens can live for a year. Check enrollment on each request so a
+    // removed device is immediately revoked instead of retaining API access.
+    const enrolled = await this.prisma.device.findUnique({
+      where: { id: payload.sub },
+      select: { id: true, familyId: true },
+    });
+    if (!enrolled || enrolled.familyId !== payload.fid) {
+      throw new UnauthorizedException('device is no longer enrolled');
+    }
+
+    req.device = { deviceId: enrolled.id, familyId: enrolled.familyId };
     return true;
   }
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../api/backend_url_policy.dart';
 import '../theme/app_theme.dart';
 import '../state/providers.dart';
 
@@ -16,6 +18,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _password = TextEditingController();
   late final TextEditingController _baseUrl;
   bool _advanced = false;
+  String? _urlError;
 
   @override
   void initState() {
@@ -31,8 +34,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  void _apply() {
-    ref.read(baseUrlProvider.notifier).state = _baseUrl.text.trim();
+  Future<bool> _apply() async {
+    String normalized;
+    try {
+      normalized = BackendUrlPolicy.normalize(_baseUrl.text);
+    } on FormatException catch (error) {
+      setState(() => _urlError = error.message);
+      return false;
+    }
+
+    try {
+      await const FlutterSecureStorage().write(
+        key: 'backend_base_url',
+        value: normalized,
+      );
+      ref.read(baseUrlProvider.notifier).state = normalized;
+      setState(() => _urlError = null);
+      return true;
+    } catch (_) {
+      setState(() => _urlError =
+          'Could not save the backend URL securely. Check device storage and try again.');
+      return false;
+    }
   }
 
   @override
@@ -52,7 +75,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const SizedBox(height: 24),
-                  // brand lockup
                   Center(
                     child: Container(
                       width: 64,
@@ -61,7 +83,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         color: scheme.primary.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Icon(Icons.shield_rounded, color: scheme.primary, size: 32),
+                      child: Icon(Icons.shield_rounded,
+                          color: scheme.primary, size: 32),
                     ),
                   ),
                   const SizedBox(height: 18),
@@ -74,7 +97,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Text(
                     'Keep an eye, gently.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 15),
+                    style: TextStyle(
+                        color: scheme.onSurfaceVariant, fontSize: 15),
                   ),
                   const SizedBox(height: 36),
                   TextField(
@@ -94,7 +118,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     alignment: Alignment.centerLeft,
                     child: TextButton(
                       onPressed: () => setState(() => _advanced = !_advanced),
-                      child: Text(_advanced ? 'Hide server' : 'Self-hosting? Set server'),
+                      child: Text(
+                        _advanced ? 'Hide server' : 'Self-hosting? Set server',
+                      ),
                     ),
                   ),
                   if (_advanced)
@@ -102,7 +128,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       controller: _baseUrl,
                       keyboardType: TextInputType.url,
                       autocorrect: false,
-                      decoration: const InputDecoration(labelText: 'Backend URL'),
+                      onChanged: (_) {
+                        if (_urlError != null) {
+                          setState(() => _urlError = null);
+                        }
+                      },
+                      decoration: InputDecoration(
+                        labelText: 'Backend URL',
+                        helperText:
+                            'Use HTTPS for remote servers. HTTP is only allowed for local development.',
+                        errorText: _urlError,
+                      ),
                     ),
                   if (auth.error != null) ...[
                     const SizedBox(height: 14),
@@ -129,9 +165,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   FilledButton(
                     onPressed: auth.loading
                         ? null
-                        : () {
-                            _apply();
-                            notifier.login(_email.text.trim(), _password.text);
+                        : () async {
+                            if (!await _apply()) return;
+                            await notifier.login(_email.text.trim(), _password.text);
                           },
                     child: auth.loading
                         ? const SizedBox(
@@ -146,9 +182,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   OutlinedButton(
                     onPressed: auth.loading
                         ? null
-                        : () {
-                            _apply();
-                            notifier.register(_email.text.trim(), _password.text);
+                        : () async {
+                            if (!await _apply()) return;
+                            await notifier.register(
+                                _email.text.trim(), _password.text);
                           },
                     child: const Text('Create account'),
                   ),

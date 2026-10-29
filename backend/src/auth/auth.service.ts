@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -27,23 +28,46 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
+    if (Buffer.byteLength(dto.password, 'utf8') > 72) {
+      throw new BadRequestException(
+        'Password must be at most 72 UTF-8 bytes because bcrypt cannot safely hash longer values',
+      );
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
     if (existing) throw new ConflictException('email already registered');
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
-    const user = await this.prisma.user.create({
-      data: {
-        email: dto.email,
-        passwordHash,
-        family: { create: { name: dto.familyName ?? `${dto.email}'s family` } },
-      },
-    });
+    let user;
+    try {
+      user = await this.prisma.user.create({
+        data: {
+          email: dto.email,
+          passwordHash,
+          family: { create: { name: dto.familyName ?? `${dto.email}'s family` } },
+        },
+      });
+    } catch (error) {
+      // The pre-check is only a friendly fast path; enforce uniqueness under
+      // concurrent registrations using the database's unique constraint too.
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('email already registered');
+      }
+      throw error;
+    }
     return this.issue(user);
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
+    if (Buffer.byteLength(dto.password, 'utf8') > 72) {
+      throw new UnauthorizedException('invalid credentials');
+    }
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -70,10 +94,14 @@ export class AuthService {
     if (!user || !user.refreshTokenHash) {
       throw new UnauthorizedException('refresh token revoked');
     }
-    if (!safeEqual(sha256(dto.refreshToken), user.refreshTokenHash)) {
+    const previousHash = user.refreshTokenHash;
+    if (!safeEqual(sha256(dto.refreshToken), previousHash)) {
       throw new UnauthorizedException('refresh token mismatch');
     }
-    return this.issue(user);
+
+    // Compare-and-swap means concurrent requests with one refresh token cannot
+    // both succeed and return competing refresh tokens.
+    return this.issue(user, previousHash);
   }
 
   async logout(userId: string): Promise<void> {
@@ -91,23 +119,39 @@ export class AuthService {
     });
   }
 
-  /** Issue an access+refresh pair and persist the (rotated) refresh hash. */
-  private async issue(user: {
-    id: string;
-    email: string;
-    familyId: string;
-    role: string;
-  }): Promise<AuthResult> {
+  /** Issue an access+refresh pair and persist its hash. */
+  private async issue(
+    user: {
+      id: string;
+      email: string;
+      familyId: string;
+      role: string;
+    },
+    expectedPreviousHash?: string,
+  ): Promise<AuthResult> {
     const accessToken = await this.tokens.signAccess(
       user.id,
       user.familyId,
       user.role,
     );
     const refreshToken = await this.tokens.signRefresh(user.id, user.familyId);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: sha256(refreshToken) },
-    });
+    const nextHash = sha256(refreshToken);
+
+    if (expectedPreviousHash !== undefined) {
+      const result = await this.prisma.user.updateMany({
+        where: { id: user.id, refreshTokenHash: expectedPreviousHash },
+        data: { refreshTokenHash: nextHash },
+      });
+      if (result.count !== 1) {
+        throw new UnauthorizedException('refresh token has already been used');
+      }
+    } else {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { refreshTokenHash: nextHash },
+      });
+    }
+
     return {
       accessToken,
       refreshToken,

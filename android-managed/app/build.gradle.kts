@@ -23,6 +23,8 @@ android {
 
     buildFeatures {
         viewBinding = true
+        // MoniiRepository uses BuildConfig.VERSION_NAME for device registration.
+        buildConfig = true
     }
 
     buildTypes {
@@ -57,6 +59,8 @@ dependencies {
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation("junit:junit:4.13.2")
 
     // FCM (instant command wake)
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))

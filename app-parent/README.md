@@ -1,9 +1,14 @@
-# app-parent — OpenParental parent (controller) app
+# OpenParental parent (controller) app
+
+> **Project roadmap:** see [../ROADMAP.md](../ROADMAP.md) for the cross-project plan and evidence-based feature status. The parent UI and backend must be tested together; a control in the UI is not complete until the child performs it and the result is reflected accurately.
+
 
 Flutter. Login/register, pair a device (shows the code to type on the child),
 device dashboard (online/battery/last-seen), remote **Lock** / **Ping**, a
 blocked-apps **policy editor** that pushes `SET_POLICY` to every device, and an
-**alert feed** (tamper, went-dark, unblock requests).
+**alert feed** (tamper, went-dark, unblock requests). Current roadmap priority is
+to verify command outcomes and complete the parent-to-child fresh-location
+request flow; see [../ROADMAP.md](../ROADMAP.md).
 
 ## Run
 
