@@ -8,9 +8,9 @@ import app.monii.managed.net.CommandDto
 import app.monii.managed.repo.MoniiRepository
 
 /**
- * Pull pending commands, execute each, ack + post the result. The server spine
- * is idempotent (ack/result are no-ops once terminal), so re-running after a
- * crash or duplicate wake is safe.
+ * Pull pending commands, execute them, then post terminal results. If result
+ * reporting fails, the command remains pending and can be replayed; handlers
+ * must therefore remain idempotent.
  */
 class CommandDispatcher(
     private val context: Context,
