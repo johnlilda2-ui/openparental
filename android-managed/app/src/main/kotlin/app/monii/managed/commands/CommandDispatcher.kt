@@ -9,6 +9,8 @@ import app.monii.managed.net.CommandDto
 import app.monii.managed.permissions.SpecialAccess
 import app.monii.managed.repo.MoniiRepository
 import app.monii.managed.supervisor.SupervisorService
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Pull pending commands, acknowledge each, then execute only if the server
@@ -20,7 +22,7 @@ class CommandDispatcher(
     private val repo: MoniiRepository,
     private val admin: AdminManager,
 ) {
-    suspend fun syncAndExecute(): Int {
+    suspend fun syncAndExecute(): Int = dispatchMutex.withLock {
         val commands = repo.pullCommands()
         var processed = 0
         for (command in commands) {
@@ -46,7 +48,7 @@ class CommandDispatcher(
             }
             processed++
         }
-        return processed
+        processed
     }
 
     private suspend fun execute(command: CommandDto): Map<String, Any?> =
@@ -94,4 +96,10 @@ class CommandDispatcher(
             "REQUEST_LOCATION" -> LocationReporter(context).reportCurrent(repo)
             else -> throw IllegalArgumentException("Unsupported command type: ${command.type}")
         }
+
+    companion object {
+        // The foreground service and WorkManager can dispatch concurrently.
+        // Serialize pull/ack/execute/result across all dispatcher instances.
+        private val dispatchMutex = Mutex()
+    }
 }
