@@ -3,29 +3,50 @@ import { Test } from '@nestjs/testing';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { TokenService } from '../auth/token.service';
-import { DevicesService } from '../devices/devices.service';
 import { PairingService } from './pairing.service';
 
 describe('PairingService', () => {
   let service: PairingService;
   let prisma: {
-    pairing: { create: jest.Mock; findFirst: jest.Mock; update: jest.Mock };
+    pairing: {
+      create: jest.Mock;
+      findFirst: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    device: { create: jest.Mock };
+    $transaction: jest.Mock;
   };
   let tokens: { signDevice: jest.Mock };
-  let devices: { createForPairing: jest.Mock };
   let audit: { log: jest.Mock };
 
   beforeEach(async () => {
+    const tx = {
+      pairing: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      device: {
+        create: jest.fn().mockResolvedValue({
+          id: 'd1',
+          familyId: 'f1',
+          model: 'Pixel',
+        }),
+      },
+    };
     prisma = {
-      pairing: { create: jest.fn(), findFirst: jest.fn(), update: jest.fn() },
+      pairing: {
+        create: jest.fn(),
+        findFirst: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
+      device: { create: jest.fn() },
+      $transaction: jest.fn((callback: (client: typeof tx) => unknown) =>
+        callback(tx),
+      ),
     };
     tokens = { signDevice: jest.fn().mockResolvedValue('device-token') };
-    devices = {
-      createForPairing: jest.fn().mockResolvedValue({
-        device: { id: 'd1', familyId: 'f1', model: 'Pixel' },
-        deviceSecret: 'secret',
-      }),
-    };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
 
     const ref = await Test.createTestingModule({
@@ -33,7 +54,6 @@ describe('PairingService', () => {
         PairingService,
         { provide: PrismaService, useValue: prisma },
         { provide: TokenService, useValue: tokens },
-        { provide: DevicesService, useValue: devices },
         { provide: AuditService, useValue: audit },
       ],
     }).compile();
@@ -50,7 +70,7 @@ describe('PairingService', () => {
     expect(res.expiresAt.getTime()).toBeGreaterThan(Date.now());
   });
 
-  it('claim mints a device token and marks the pairing CLAIMED', async () => {
+  it('claims once inside a transaction and returns device credentials', async () => {
     prisma.pairing.findFirst.mockResolvedValue({
       id: 'p1',
       familyId: 'f1',
@@ -58,15 +78,15 @@ describe('PairingService', () => {
       expiresAt: new Date(Date.now() + 60_000),
       deviceName: null,
     });
-    prisma.pairing.update.mockResolvedValue({});
 
     const res = await service.claim({ token: 'tok', model: 'Pixel' });
     expect(res.deviceToken).toBe('device-token');
     expect(res.deviceId).toBe('d1');
-    expect(prisma.pairing.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { status: 'CLAIMED', claimedDeviceId: 'd1' },
-    });
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tokens.signDevice).toHaveBeenCalledWith('d1', 'f1');
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'device_paired' }),
+    );
   });
 
   it('claim rejects an unknown token', async () => {
@@ -76,33 +96,61 @@ describe('PairingService', () => {
     );
   });
 
-  it('claim rejects an already-used pairing', async () => {
+  it('claim rejects a pairing already marked as used', async () => {
     prisma.pairing.findFirst.mockResolvedValue({
       id: 'p1',
-      familyId: 'f1',
       status: 'CLAIMED',
       expiresAt: new Date(Date.now() + 60_000),
     });
     await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('claim expires and rejects a stale pairing', async () => {
+  it('marks expired pairings expired and rejects them', async () => {
+    prisma.pairing.findFirst.mockResolvedValue({
+      id: 'p1',
+      status: 'PENDING',
+      expiresAt: new Date(Date.now() - 1_000),
+    });
+    await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    expect(prisma.pairing.updateMany).toHaveBeenCalledWith({
+      where: { id: 'p1', status: 'PENDING' },
+      data: { status: 'EXPIRED' },
+    });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a concurrent claimant when the conditional claim loses', async () => {
     prisma.pairing.findFirst.mockResolvedValue({
       id: 'p1',
       familyId: 'f1',
       status: 'PENDING',
-      expiresAt: new Date(Date.now() - 1_000),
+      expiresAt: new Date(Date.now() + 60_000),
+      deviceName: null,
     });
-    prisma.pairing.update.mockResolvedValue({});
+    prisma.$transaction.mockImplementationOnce(
+      async (callback: (client: {
+        pairing: { updateMany: jest.Mock; update: jest.Mock };
+        device: { create: jest.Mock };
+      }) => Promise<unknown>) => {
+        const tx = {
+          pairing: {
+            updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+            update: jest.fn(),
+          },
+          device: { create: jest.fn() },
+        };
+        return callback(tx);
+      },
+    );
+
     await expect(service.claim({ token: 'tok' })).rejects.toBeInstanceOf(
       BadRequestException,
     );
-    expect(prisma.pairing.update).toHaveBeenCalledWith({
-      where: { id: 'p1' },
-      data: { status: 'EXPIRED' },
-    });
   });
 
   it('getStatus rejects a pairing from another family', async () => {

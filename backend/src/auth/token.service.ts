@@ -3,6 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { AnyPayload } from '../common/types';
 
+const MIN_PRODUCTION_SECRET_LENGTH = 32;
+const KNOWN_WEAK_SECRETS = new Set([
+  'dev-secret-change-me',
+  'change-me-in-prod-please-use-a-long-random-string',
+  'secret',
+  'password',
+]);
+
 @Injectable()
 export class TokenService {
   private readonly secret: string;
@@ -14,7 +22,20 @@ export class TokenService {
     private readonly jwt: JwtService,
     config: ConfigService,
   ) {
-    this.secret = config.get<string>('jwt.secret') ?? 'dev-secret-change-me';
+    const secret = config.get<string>('jwt.secret') ?? '';
+    const nodeEnv = config.get<string>('nodeEnv') ?? process.env.NODE_ENV ?? 'development';
+
+    if (
+      nodeEnv === 'production' &&
+      (secret.trim().length < MIN_PRODUCTION_SECRET_LENGTH ||
+        KNOWN_WEAK_SECRETS.has(secret.trim().toLowerCase()))
+    ) {
+      throw new Error(
+        `JWT_SECRET must be a randomly generated secret of at least ${MIN_PRODUCTION_SECRET_LENGTH} characters in production`,
+      );
+    }
+
+    this.secret = secret || 'dev-secret-change-me';
     this.accessTtl = config.get<number>('jwt.accessTtl') ?? 900;
     this.refreshTtl = config.get<number>('jwt.refreshTtl') ?? 2592000;
     this.deviceTtl = config.get<number>('jwt.deviceTtl') ?? 31536000;

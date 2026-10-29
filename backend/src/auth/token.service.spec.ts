@@ -2,9 +2,16 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { TokenService } from './token.service';
 
-const config = (secret = 'test-secret'): ConfigService =>
+const config = (
+  secret = 'test-secret',
+  nodeEnv = 'test',
+): ConfigService =>
   ({
-    get: (k: string) => (k === 'jwt.secret' ? secret : 900),
+    get: (k: string) => {
+      if (k === 'jwt.secret') return secret;
+      if (k === 'nodeEnv') return nodeEnv;
+      return 900;
+    },
   }) as unknown as ConfigService;
 
 describe('TokenService', () => {
@@ -39,5 +46,37 @@ describe('TokenService', () => {
     const other = new TokenService(new JwtService({}), config('other-secret'));
     const token = await other.signAccess('u', 'f', 'PARENT');
     await expect(tokens.verify(token)).rejects.toBeDefined();
+  });
+
+  it('rejects a missing JWT secret in production', () => {
+    expect(
+      () => new TokenService(new JwtService({}), config('', 'production')),
+    ).toThrow(/JWT_SECRET must be a randomly generated secret/);
+  });
+
+  it('rejects a known placeholder JWT secret in production', () => {
+    expect(
+      () =>
+        new TokenService(
+          new JwtService({}),
+          config('change-me-in-prod-please-use-a-long-random-string', 'production'),
+        ),
+    ).toThrow(/JWT_SECRET must be a randomly generated secret/);
+  });
+
+  it('rejects a short JWT secret in production', () => {
+    expect(
+      () => new TokenService(new JwtService({}), config('too-short', 'production')),
+    ).toThrow(/JWT_SECRET must be a randomly generated secret/);
+  });
+
+  it('accepts a sufficiently long secret in production', () => {
+    expect(
+      () =>
+        new TokenService(
+          new JwtService({}),
+          config('a-randomly-generated-production-secret-at-least-32-chars', 'production'),
+        ),
+    ).not.toThrow();
   });
 });
