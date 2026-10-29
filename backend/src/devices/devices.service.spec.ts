@@ -11,6 +11,7 @@ describe('DevicesService', () => {
   let prisma: {
     device: {
       create: jest.Mock;
+      upsert: jest.Mock;
       findMany: jest.Mock;
       findFirst: jest.Mock;
       findUnique: jest.Mock;
@@ -34,6 +35,7 @@ describe('DevicesService', () => {
     prisma = {
       device: {
         create: jest.fn(),
+        upsert: jest.fn(),
         findMany: jest.fn(),
         findFirst: jest.fn(),
         findUnique: jest.fn(),
@@ -66,6 +68,31 @@ describe('DevicesService', () => {
     expect(res.device.familyId).toBe('f1');
     expect(typeof res.deviceSecret).toBe('string');
     expect(res.device.secretHash).toBe(sha256(res.deviceSecret));
+  });
+
+  it('reuses the same device row for a known installation and rotates its secret', async () => {
+    prisma.device.upsert.mockImplementation(({ where, create, update }) =>
+      Promise.resolve({
+        id: 'd-existing',
+        familyId: where.familyId_installationId.familyId,
+        ...create,
+        ...update,
+      }),
+    );
+    const result = await service.createForPairing('f1', {
+      installationId: 'install-123',
+      model: 'Pixel',
+    });
+    expect(prisma.device.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        familyId_installationId: {
+          familyId: 'f1',
+          installationId: 'install-123',
+        },
+      },
+    }));
+    expect(result.device.id).toBe('d-existing');
+    expect(result.device.secretHash).toBe(sha256(result.deviceSecret));
   });
 
   it('listForFamily scopes the query by familyId', async () => {
