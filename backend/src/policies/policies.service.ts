@@ -4,6 +4,12 @@ import { AuditService } from '../audit/audit.service';
 import { CommandsService } from '../commands/commands.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+type PolicyDelivery = {
+  targetDevices: number;
+  queuedDevices: number;
+  failedDevices: number;
+};
+
 @Injectable()
 export class PoliciesService {
   constructor(
@@ -31,7 +37,7 @@ export class PoliciesService {
   async update(
     familyId: string,
     rules: Record<string, unknown>,
-  ): Promise<Policy> {
+  ): Promise<Policy & { delivery: PolicyDelivery }> {
     const latest = await this.prisma.policy.findFirst({
       where: { familyId },
       orderBy: { version: 'desc' },
@@ -53,30 +59,37 @@ export class PoliciesService {
       },
     });
 
-    await this.pushToDevices(familyId, policy);
+    const delivery = await this.pushToDevices(familyId, policy);
     await this.audit.log({
       familyId,
       actor: 'parent',
       action: 'policy_updated',
-      data: { version },
+      data: { version, ...delivery },
     });
-    return policy;
+    return { ...policy, delivery };
   }
 
-  private async pushToDevices(familyId: string, policy: Policy): Promise<void> {
+  private async pushToDevices(
+    familyId: string,
+    policy: Policy,
+  ): Promise<PolicyDelivery> {
     const devices = await this.prisma.device.findMany({
       where: { familyId },
       select: { id: true },
     });
-    await Promise.all(
+    const results = await Promise.allSettled(
       devices.map((d) =>
-        this.commands
-          .enqueue(familyId, d.id, {
-            type: CommandType.SET_POLICY,
-            payload: { version: policy.version, rules: policy.rules },
-          })
-          .catch(() => undefined),
+        this.commands.enqueue(familyId, d.id, {
+          type: CommandType.SET_POLICY,
+          payload: { version: policy.version, rules: policy.rules },
+        }),
       ),
     );
+    const queuedDevices = results.filter((result) => result.status === 'fulfilled').length;
+    return {
+      targetDevices: devices.length,
+      queuedDevices,
+      failedDevices: devices.length - queuedDevices,
+    };
   }
 }
