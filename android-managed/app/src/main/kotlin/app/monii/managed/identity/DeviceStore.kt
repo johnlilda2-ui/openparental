@@ -1,6 +1,7 @@
 package app.monii.managed.identity
 
 import android.content.Context
+import java.util.UUID
 
 /**
  * Device identity + backend base URL. SharedPreferences for now; the device
@@ -12,6 +13,15 @@ class DeviceStore(context: Context) {
 
     fun baseUrl(): String = prefs.getString("base_url", DEFAULT_BASE) ?: DEFAULT_BASE
     fun setBaseUrl(url: String) = prefs.edit().putString("base_url", url.trim()).apply()
+
+    /** Stable ID for this app installation; survives unpairing and app restarts. */
+    fun installationId(): String {
+        val existing = prefs.getString("installation_id", null)
+        if (!existing.isNullOrBlank()) return existing
+        val created = UUID.randomUUID().toString()
+        prefs.edit().putString("installation_id", created).commit()
+        return prefs.getString("installation_id", created) ?: created
+    }
 
     fun token(): String? = prefs.getString("device_token", null)
     fun setToken(token: String) = prefs.edit().putString("device_token", token).apply()
