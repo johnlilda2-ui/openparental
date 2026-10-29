@@ -11,7 +11,12 @@ jest.mock('bcrypt');
 describe('AuthService', () => {
   let service: AuthService;
   let prisma: {
-    user: { findUnique: jest.Mock; create: jest.Mock; update: jest.Mock };
+    user: {
+      findUnique: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
   };
   let tokens: {
     signAccess: jest.Mock;
@@ -31,7 +36,12 @@ describe('AuthService', () => {
 
   beforeEach(async () => {
     prisma = {
-      user: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      user: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      },
     };
     tokens = {
       signAccess: jest.fn().mockResolvedValue('access-token'),
@@ -72,7 +82,6 @@ describe('AuthService', () => {
         familyId: 'f1',
         role: 'PARENT',
       });
-      // refresh hash is persisted as a sha256 of the issued token
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'u1' },
         data: { refreshTokenHash: sha256('refresh-token') },
@@ -92,8 +101,6 @@ describe('AuthService', () => {
     it('returns tokens for valid credentials', async () => {
       prisma.user.findUnique.mockResolvedValue({ ...sampleUser });
       prisma.user.update.mockResolvedValue({ ...sampleUser });
-      (bcrypt.compare as jest.Mock).mockResolvedValue(true);
-
       const result = await service.login({
         email: sampleUser.email,
         password: 'longenough',
@@ -119,17 +126,31 @@ describe('AuthService', () => {
 
   describe('refresh', () => {
     const validRefresh = 'valid-refresh-token';
+    const userWithRefresh = {
+      ...sampleUser,
+      refreshTokenHash: sha256(validRefresh),
+    };
 
-    it('rotates the token pair when the refresh token matches', async () => {
+    beforeEach(() => {
       tokens.verify.mockResolvedValue({ sub: 'u1', fid: 'f1', typ: 'refresh' });
-      prisma.user.findUnique.mockResolvedValue({
-        ...sampleUser,
-        refreshTokenHash: sha256(validRefresh),
-      });
-      prisma.user.update.mockResolvedValue({ ...sampleUser });
+      prisma.user.findUnique.mockResolvedValue(userWithRefresh);
+    });
 
+    it('rotates the token pair using an atomic compare-and-swap', async () => {
       const result = await service.refresh({ refreshToken: validRefresh });
       expect(result.accessToken).toBe('access-token');
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: { id: 'u1', refreshTokenHash: sha256(validRefresh) },
+        data: { refreshTokenHash: sha256('refresh-token') },
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects concurrent replay if another request rotated first', async () => {
+      prisma.user.updateMany.mockResolvedValue({ count: 0 });
+      await expect(
+        service.refresh({ refreshToken: validRefresh }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
     });
 
     it('rejects an unverifiable token', async () => {
@@ -147,7 +168,6 @@ describe('AuthService', () => {
     });
 
     it('rejects when the stored refresh hash is revoked (null)', async () => {
-      tokens.verify.mockResolvedValue({ sub: 'u1', fid: 'f1', typ: 'refresh' });
       prisma.user.findUnique.mockResolvedValue({
         ...sampleUser,
         refreshTokenHash: null,
@@ -158,7 +178,6 @@ describe('AuthService', () => {
     });
 
     it('rejects when the refresh token does not match the stored hash', async () => {
-      tokens.verify.mockResolvedValue({ sub: 'u1', fid: 'f1', typ: 'refresh' });
       prisma.user.findUnique.mockResolvedValue({
         ...sampleUser,
         refreshTokenHash: sha256('a-different-token'),
