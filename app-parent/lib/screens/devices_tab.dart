@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/models.dart';
 import '../state/providers.dart';
@@ -60,6 +61,7 @@ class DevicesTab extends ConsumerWidget {
                 device: d,
                 onTap: () {
                   ref.read(selectedDeviceIdProvider.notifier).state = d.id;
+                  const FlutterSecureStorage().write(key: 'selected_device_id', value: d.id);
                   Navigator.pop(sheet);
                 },
               ),
