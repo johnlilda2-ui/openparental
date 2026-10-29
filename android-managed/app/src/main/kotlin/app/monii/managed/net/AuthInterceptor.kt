@@ -12,15 +12,7 @@ import okhttp3.Response
 class AuthInterceptor(private val store: DeviceStore) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
-        val path = request.url.encodedPath.trimStart('/')
-        // Retrofit appends endpoint paths to the configured base path (which
-        // may include a prefix such as /v1/). Match the final route, not only
-        // root-relative paths, so bootstrap calls never leak an old token.
-        val isBootstrapRequest =
-            path == "pairings/claim" ||
-            path.endsWith("/pairings/claim") ||
-            path == "devices/token" ||
-            path.endsWith("/devices/token")
+        val isBootstrapRequest = isBootstrapPath(request.url.encodedPath)
 
         val token = if (isBootstrapRequest) null else store.token()
         val authenticatedRequest =
@@ -34,5 +26,17 @@ class AuthInterceptor(private val store: DeviceStore) : Interceptor {
                     .build()
             }
         return chain.proceed(authenticatedRequest)
+    }
+
+    companion object {
+        internal fun isBootstrapPath(encodedPath: String): Boolean {
+            // Retrofit appends endpoint paths to the configured base path,
+            // which may include a prefix such as /v1/.
+            val path = encodedPath.trimStart('/')
+            return path == "pairings/claim" ||
+                path.endsWith("/pairings/claim") ||
+                path == "devices/token" ||
+                path.endsWith("/devices/token")
+        }
     }
 }
