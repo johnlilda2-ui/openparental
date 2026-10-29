@@ -20,7 +20,7 @@
     "resolveJsonModule": true,
     "paths": {
       "src/*": [
-        "src/*"
+        "./src/*"
       ]
     },
     "rootDir": "./src"
