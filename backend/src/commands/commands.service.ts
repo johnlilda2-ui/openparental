@@ -10,6 +10,10 @@ import { CommandResultDto } from './dto/command-result.dto';
 import { CreateCommandDto } from './dto/create-command.dto';
 
 /** Wake-critical commands get high-priority FCM; the rest go normal priority. */
+// Policies are durable state, not one-shot actions. Keep them available across
+// the 15-minute WorkManager fallback and temporary device outages.
+const POLICY_COMMAND_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 const HIGH_PRIORITY: ReadonlySet<CommandType> = new Set([
   CommandType.LOCK,
   CommandType.UNLOCK,
@@ -56,7 +60,16 @@ export class CommandsService {
         payload: (dto.payload ?? undefined) as Prisma.InputJsonValue | undefined,
         idempotencyKey,
         state: 'QUEUED',
-        expiresAt: new Date(Date.now() + this.ttlSeconds * 1000),
+        expiresAt: new Date(
+          Date.now() +
+            Math.max(
+              this.ttlSeconds,
+              dto.type === CommandType.SET_POLICY
+                ? POLICY_COMMAND_TTL_SECONDS
+                : this.ttlSeconds,
+            ) *
+              1000,
+        ),
       },
     });
 
