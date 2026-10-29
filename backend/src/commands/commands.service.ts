@@ -83,10 +83,18 @@ export class CommandsService {
       }
     }
 
-    const updated = await this.prisma.command.update({
+    // A device can ACK immediately after FCM arrives. Never overwrite ACKED
+    // (or a terminal state) with SENT after that race; only promote QUEUED.
+    if (sent) {
+      await this.prisma.command.updateMany({
+        where: { id: command.id, state: 'QUEUED' },
+        data: { state: 'SENT' },
+      });
+    }
+    const updated = await this.prisma.command.findUnique({
       where: { id: command.id },
-      data: { state: sent ? 'SENT' : 'QUEUED' },
     });
+    if (!updated) throw new NotFoundException('command disappeared after enqueue');
     await this.audit.log({
       familyId,
       actor: 'parent',
