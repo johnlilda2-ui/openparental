@@ -4,9 +4,9 @@ import * as admin from 'firebase-admin';
 import { readFileSync } from 'fs';
 
 /**
- * Push abstraction over firebase-admin. With no service-account configured it
- * runs in stub mode (pushes are logged, not sent) so the rest of the system is
- * fully testable/dev-runnable without Firebase credentials.
+ * Push abstraction over firebase-admin. Supports either a mounted service-account
+ * file or JSON stored in the hosting provider's secret environment variables.
+ * With no credentials it remains in explicit stub mode so local development works.
  *
  * High priority is reserved for wake-critical messages (lock, screen-view). FCM
  * quota-limits high priority; abuse silently downgrades to Doze-buffered normal.
@@ -20,19 +20,28 @@ export class FcmService implements OnModuleInit {
 
   onModuleInit(): void {
     const path = this.config.get<string>('fcm.serviceAccountPath');
-    if (!path) {
-      this.logger.warn('FCM not configured — stub mode (pushes logged, not sent).');
+    const json = this.config.get<string>('fcm.serviceAccountJson');
+
+    if (!path && !json) {
+      this.logger.warn(
+        'FCM not configured — stub mode (pushes logged, not sent). Set FCM_SERVICE_ACCOUNT_JSON or FCM_SERVICE_ACCOUNT_PATH to enable push delivery.',
+      );
       return;
     }
+
     try {
-      const serviceAccount = JSON.parse(readFileSync(path, 'utf8'));
+      const serviceAccount = JSON.parse(
+        json || readFileSync(path as string, 'utf8'),
+      );
       this.app = admin.initializeApp(
         { credential: admin.credential.cert(serviceAccount) },
         'monii',
       );
       this.logger.log('FCM initialized.');
-    } catch (e) {
-      this.logger.error(`FCM init failed (${String(e)}) — falling back to stub mode.`);
+    } catch {
+      this.logger.error(
+        'FCM initialization failed — push delivery is disabled. Verify the Firebase service-account JSON/path.',
+      );
     }
   }
 
@@ -47,7 +56,9 @@ export class FcmService implements OnModuleInit {
     highPriority = true,
   ): Promise<boolean> {
     if (!this.app) {
-      this.logger.debug(`[stub] FCM -> ${token.slice(0, 8)}… ${JSON.stringify(data)}`);
+      this.logger.debug(
+        `[stub] FCM -> ${token.slice(0, 8)}… ${JSON.stringify(data)}`,
+      );
       return false;
     }
     try {
