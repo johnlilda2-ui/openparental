@@ -57,6 +57,32 @@ class Device {
       );
 }
 
+class CommandInfo {
+  final String id;
+  final String type;
+  final String state;
+  final Map<String, dynamic>? result;
+  final String? error;
+
+  const CommandInfo({
+    required this.id,
+    required this.type,
+    required this.state,
+    this.result,
+    this.error,
+  });
+
+  factory CommandInfo.fromJson(Map<String, dynamic> j) => CommandInfo(
+        id: j['id'] as String,
+        type: (j['type'] as String?) ?? 'UNKNOWN',
+        state: (j['state'] as String?) ?? 'UNKNOWN',
+        result: j['result'] is Map
+            ? Map<String, dynamic>.from(j['result'] as Map)
+            : null,
+        error: j['error'] as String?,
+      );
+}
+
 class AlertModel {
   final String id;
   final String type;
