@@ -50,10 +50,27 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
         .toList();
     setState(() => _busy = true);
     try {
-      await ref.read(apiProvider).updatePolicy({'blockedApps': apps});
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Saved — pushed to your devices')),
-      );
+      final result =
+          await ref.read(apiProvider).updatePolicy({'blockedApps': apps});
+      if (!mounted) return;
+      final delivery = result['delivery'];
+      if (delivery is! Map) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Policy saved. Device delivery is not confirmed yet.'),
+          ),
+        );
+      } else {
+        final targets = (delivery['targetDevices'] as num?)?.toInt() ?? 0;
+        final queued = (delivery['queuedDevices'] as num?)?.toInt() ?? 0;
+        final failed = (delivery['failedDevices'] as num?)?.toInt() ?? 0;
+        final message = targets == 0
+            ? 'Policy saved. No paired devices are available yet.'
+            : failed > 0
+                ? 'Policy saved; queuing failed for $failed of $targets devices. Check connectivity and retry.'
+                : 'Policy saved and queued for $queued of $targets devices. Blocking requires Accessibility to be enabled on each child device.';
+        messenger.showSnackBar(SnackBar(content: Text(message)));
+      }
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
     } finally {
@@ -81,9 +98,10 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Blocked apps are bounced back to the home screen '
-                            'on every paired device. The child sees that the '
-                            'app is blocked — nothing happens silently.',
+                            'When app blocking is active, selected apps are '
+                            'sent back to the home screen. Each child device '
+                            'must have Accessibility enabled; a saved policy '
+                            'does not by itself prove that blocking is active.',
                             style: TextStyle(
                               color: scheme.onSurfaceVariant,
                               fontSize: 13,
@@ -96,7 +114,7 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const SectionLabel('Package names'),
+                const SectionLabel('Android package names'),
                 const SizedBox(height: 10),
                 TextField(
                   controller: _blocked,
@@ -104,7 +122,7 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
                   maxLines: 6,
                   decoration: const InputDecoration(
                     hintText:
-                        'com.zhiliaoapp.musically, com.instagram.android',
+                        'Package IDs, not app names. Example: com.zhiliaoapp.musically, com.instagram.android',
                   ),
                 ),
                 const SizedBox(height: 16),
