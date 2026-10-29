@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import '../lib/api/backend_url_policy.dart';
+import 'package:monii_parent/api/backend_url_policy.dart';
 
 void main() {
   group('BackendUrlPolicy', () {
