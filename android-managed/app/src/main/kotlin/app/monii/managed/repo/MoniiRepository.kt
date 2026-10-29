@@ -42,6 +42,7 @@ class MoniiRepository(
                 osVersion = Build.VERSION.RELEASE,
                 appVersion = APP_VERSION,
                 fcmToken = store.fcmToken(),
+                installationId = store.installationId(),
             ),
         )
         store.savePairing(res.deviceId, res.deviceToken, res.deviceSecret)
