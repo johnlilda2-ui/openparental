@@ -85,7 +85,9 @@ export class PoliciesService {
         }),
       ),
     );
-    const queuedDevices = results.filter((result) => result.status === 'fulfilled').length;
+    const queuedDevices = results.filter(
+      (result) => result.status === 'fulfilled',
+    ).length;
     return {
       targetDevices: devices.length,
       queuedDevices,
