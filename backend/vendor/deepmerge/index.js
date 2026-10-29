@@ -51,7 +51,7 @@ function propertyIsUnsafe(target, key) {
 }
 
 function isPrototypeSensitiveKey(key) {
-	return key === '__proto__' || key === 'constructor' || key === 'prototype'
+	return key === '__proto__' || key === 'constructor' || key === 'prototype' || key === 'proto'
 }
 
 function mergeObject(target, source, options) {
