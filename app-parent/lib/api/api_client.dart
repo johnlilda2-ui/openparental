@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'models.dart';
+import 'backend_url_policy.dart';
 
 /// Talks to the monii backend. Adds the access token, and on a 401 silently
 /// refreshes (rotating refresh token) and retries the failed request once.
@@ -10,7 +11,10 @@ class ApiClient {
   final FlutterSecureStorage _storage;
   final String baseUrl;
 
-  ApiClient({required this.baseUrl, FlutterSecureStorage? storage})
+  ApiClient({required String baseUrl, FlutterSecureStorage? storage})
+      : this._normalized(BackendUrlPolicy.normalize(baseUrl), storage);
+
+  ApiClient._normalized(this.baseUrl, FlutterSecureStorage? storage)
       : _storage = storage ?? const FlutterSecureStorage(),
         _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
