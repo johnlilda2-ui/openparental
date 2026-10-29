@@ -33,6 +33,10 @@ jobs:
         working-directory: backend
         run: npm ci
 
+      - name: Upgrade bcrypt to the patched major release
+        working-directory: backend
+        run: npm install bcrypt@^6.0.0 --save
+
       - name: Apply non-breaking security updates
         working-directory: backend
         run: npm audit fix || echo "Some advisories require manual review; validating compatible updates already applied."
