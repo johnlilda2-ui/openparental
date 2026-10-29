@@ -3,6 +3,7 @@ package app.monii.managed.commands
 import android.content.Context
 import app.monii.managed.admin.AdminManager
 import app.monii.managed.data.PolicyStore
+import app.monii.managed.location.LocationReporter
 import app.monii.managed.net.CommandDto
 import app.monii.managed.repo.MoniiRepository
 
@@ -30,7 +31,7 @@ class CommandDispatcher(
         return commands.size
     }
 
-    private fun execute(command: CommandDto): Map<String, Any?> =
+    private suspend fun execute(command: CommandDto): Map<String, Any?> =
         when (command.type) {
             "LOCK" -> {
                 admin.lockNow()
@@ -42,7 +43,7 @@ class CommandDispatcher(
                 mapOf("applied" to true)
             }
             "PING" -> mapOf("pong" to true)
-            "REQUEST_LOCATION" -> mapOf("requested" to true) // Phase 6 wires the actual fix
+            "REQUEST_LOCATION" -> LocationReporter(context).reportCurrent(repo)
             else -> mapOf("ignored" to command.type)
         }
 }
