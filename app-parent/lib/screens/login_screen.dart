@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/backend_url_policy.dart';
 import '../theme/app_theme.dart';
@@ -33,14 +34,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     super.dispose();
   }
 
-  bool _apply() {
+  Future<bool> _apply() async {
+    String normalized;
     try {
-      final normalized = BackendUrlPolicy.normalize(_baseUrl.text);
+      normalized = BackendUrlPolicy.normalize(_baseUrl.text);
+    } on FormatException catch (error) {
+      setState(() => _urlError = error.message);
+      return false;
+    }
+
+    try {
+      await const FlutterSecureStorage().write(
+        key: 'backend_base_url',
+        value: normalized,
+      );
       ref.read(baseUrlProvider.notifier).state = normalized;
       setState(() => _urlError = null);
       return true;
-    } on FormatException catch (error) {
-      setState(() => _urlError = error.message);
+    } catch (_) {
+      setState(() => _urlError =
+          'Could not save the backend URL securely. Check device storage and try again.');
       return false;
     }
   }
@@ -152,9 +165,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   FilledButton(
                     onPressed: auth.loading
                         ? null
-                        : () {
-                            if (!_apply()) return;
-                            notifier.login(_email.text.trim(), _password.text);
+                        : () async {
+                            if (!await _apply()) return;
+                            await notifier.login(_email.text.trim(), _password.text);
                           },
                     child: auth.loading
                         ? const SizedBox(
@@ -169,9 +182,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   OutlinedButton(
                     onPressed: auth.loading
                         ? null
-                        : () {
-                            if (!_apply()) return;
-                            notifier.register(
+                        : () async {
+                            if (!await _apply()) return;
+                            await notifier.register(
                                 _email.text.trim(), _password.text);
                           },
                     child: const Text('Create account'),
