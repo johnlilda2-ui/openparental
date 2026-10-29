@@ -80,4 +80,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore(deps): apply non-breaking npm audit fixes [auto-deps]"
+          # Feature work can land while validation runs. Rebase the validated
+          # lockfile-only commit onto the latest branch before pushing it.
+          git fetch origin "$TARGET_BRANCH"
+          git rebase "origin/$TARGET_BRANCH"
           git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin "HEAD:$TARGET_BRANCH"
