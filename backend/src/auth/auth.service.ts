@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   UnauthorizedException,
@@ -27,6 +28,11 @@ export class AuthService {
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResult> {
+    if (Buffer.byteLength(dto.password, 'utf8') > 72) {
+      throw new BadRequestException(
+        'Password must be at most 72 UTF-8 bytes because bcrypt cannot safely hash longer values',
+      );
+    }
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
@@ -44,6 +50,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<AuthResult> {
+    if (Buffer.byteLength(dto.password, 'utf8') > 72) {
+      throw new UnauthorizedException('invalid credentials');
+    }
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
