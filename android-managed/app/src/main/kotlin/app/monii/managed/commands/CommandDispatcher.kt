@@ -25,7 +25,11 @@ class CommandDispatcher(
             if (outcome.isSuccess) {
                 repo.result(command.id, outcome.getOrNull(), null)
             } else {
-                repo.result(command.id, null, outcome.exceptionOrNull()?.message ?: "error")
+                repo.result(
+                    command.id,
+                    null,
+                    outcome.exceptionOrNull()?.message ?: "Command failed",
+                )
             }
         }
         return commands.size
@@ -37,13 +41,15 @@ class CommandDispatcher(
                 admin.lockNow()
                 mapOf("locked" to true)
             }
-            "UNLOCK" -> mapOf("noop" to "cannot force-unlock without Device Owner")
+            "UNLOCK" -> throw UnsupportedOperationException(
+                "UNLOCK is not supported for this enrollment; Android does not allow this app to force-unlock the device",
+            )
             "SET_POLICY" -> {
                 PolicyStore.save(context, command.payload)
                 mapOf("applied" to true)
             }
             "PING" -> mapOf("pong" to true)
             "REQUEST_LOCATION" -> LocationReporter(context).reportCurrent(repo)
-            else -> mapOf("ignored" to command.type)
+            else -> throw IllegalArgumentException("Unsupported command type: ${command.type}")
         }
 }
