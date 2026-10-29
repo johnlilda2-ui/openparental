@@ -4,8 +4,5 @@
   "private": true,
   "description": "OpenParental-maintained deepmerge compatibility fork with prototype-sensitive key filtering",
   "main": "index.js",
-  "license": "MIT",
-  "dependencies": {
-    "is-mergeable-object": "1.1.0"
-  }
+  "license": "MIT"
 }
