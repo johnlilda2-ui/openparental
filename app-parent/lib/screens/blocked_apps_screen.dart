@@ -50,8 +50,14 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
         .toList();
     setState(() => _busy = true);
     try {
-      final result =
-          await ref.read(apiProvider).updatePolicy({'blockedApps': apps});
+      // Merge with the current policy so editing the block list does not
+      // erase screen-time limits, schedules, or other rules.
+      final currentRules = await ref.read(apiProvider).getPolicy();
+      final rules = currentRules == null
+          ? <String, dynamic>{}
+          : Map<String, dynamic>.from(currentRules);
+      rules['blockedApps'] = apps;
+      final result = await ref.read(apiProvider).updatePolicy(rules);
       if (!mounted) return;
       final delivery = result['delivery'];
       if (delivery is! Map) {
