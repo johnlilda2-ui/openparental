@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
@@ -45,15 +46,11 @@
             android:name=".ui.OnboardingActivity"
             android:exported="false" />
 
-        <!--
-          Anchor foreground service. specialUse is the type a sideloaded app can
-          declare without Play review. Spike #1 measures whether this type
-          actually survives Android 14/15 runtime caps + OEM battery-kill.
-        -->
+        <!-- Foreground supervisor; location is enabled only during an explicit request. -->
         <service
             android:name=".supervisor.SupervisorService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|location">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="parental_supervisor_survival_spike" />
