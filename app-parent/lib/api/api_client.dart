@@ -129,8 +129,13 @@ class ApiClient {
     return null;
   }
 
-  Future<void> updatePolicy(Map<String, dynamic> rules) async {
-    await _dio.put<dynamic>('/policies', data: {'rules': rules});
+  Future<Map<String, dynamic>> updatePolicy(
+      Map<String, dynamic> rules) async {
+    final r = await _dio.put<dynamic>('/policies', data: {'rules': rules});
+    if (r.data is Map<String, dynamic>) {
+      return r.data as Map<String, dynamic>;
+    }
+    throw StateError('Unexpected policy update response');
   }
 
   // ---- alerts ----
