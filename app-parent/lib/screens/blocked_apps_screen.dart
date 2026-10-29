@@ -5,8 +5,8 @@ import '../state/providers.dart';
 import '../theme/app_theme.dart';
 import '../widgets/ui.dart';
 
-/// Family blocked-apps policy editor. Saving pushes the new policy to every
-/// paired device.
+/// Family blocked-apps policy editor. Saving queues the new policy for paired
+/// devices; application is confirmed only when each child device syncs.
 class BlockedAppsScreen extends ConsumerStatefulWidget {
   const BlockedAppsScreen({super.key});
 
