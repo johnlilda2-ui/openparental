@@ -1,4 +1,4 @@
-import { ConflictException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { sha256 } from '../common/hash.util';
@@ -95,6 +95,22 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prisma.user.create).not.toHaveBeenCalled();
     });
+
+    it('rejects a password exceeding bcrypt UTF-8 byte limit', async () => {
+      await expect(
+        service.register({ email: sampleUser.email, password: 'é'.repeat(37) }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
+      expect(prisma.user.create).not.toHaveBeenCalled();
+    });
+
+    it('maps a concurrent duplicate-email insert to a conflict', async () => {
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+      await expect(
+        service.register({ email: sampleUser.email, password: 'longenough' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+    });
   });
 
   describe('login', () => {
@@ -113,6 +129,13 @@ describe('AuthService', () => {
       await expect(
         service.login({ email: 'nope@example.com', password: 'x' }),
       ).rejects.toBeInstanceOf(UnauthorizedException);
+    });
+
+    it('rejects an overlong password without reaching bcrypt', async () => {
+      await expect(
+        service.login({ email: sampleUser.email, password: 'é'.repeat(37) }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(prisma.user.findUnique).not.toHaveBeenCalled();
     });
 
     it('rejects a wrong password', async () => {
