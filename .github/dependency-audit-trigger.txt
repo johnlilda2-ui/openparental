@@ -1,1 +1,0 @@
-One-time trigger for the dependency remediation workflow. This file can be removed after the run starts.
