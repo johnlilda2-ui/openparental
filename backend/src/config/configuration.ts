@@ -1,6 +1,4 @@
-import type { ProcessEnv } from 'node:process';
-
-export function buildConfiguration(env: ProcessEnv = process.env) {
+export function buildConfiguration(env: NodeJS.ProcessEnv = process.env) {
   const nodeEnv = env.NODE_ENV ?? 'development';
   const configuredJwtSecret = env.JWT_SECRET;
 
