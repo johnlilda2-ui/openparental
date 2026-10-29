@@ -5,6 +5,7 @@ import android.os.Build
 import app.monii.managed.data.EventBuffer
 import app.monii.managed.identity.DeviceStore
 import app.monii.managed.net.ApiProvider
+import app.monii.managed.net.BackendUrlPolicy
 import app.monii.managed.net.ClaimRequest
 import app.monii.managed.net.ClaimResponse
 import app.monii.managed.net.CommandDto
@@ -32,7 +33,8 @@ class MoniiRepository(
     private val buffer = EventBuffer(context)
 
     suspend fun claim(baseUrl: String, code: String): ClaimResponse {
-        store.setBaseUrl(baseUrl)
+        val safeBaseUrl = BackendUrlPolicy.normalize(baseUrl)
+        store.setBaseUrl(safeBaseUrl)
         val res = api.claim(
             ClaimRequest(
                 token = code.trim(),
