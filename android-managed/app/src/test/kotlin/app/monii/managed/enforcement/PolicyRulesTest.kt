@@ -51,7 +51,7 @@ class PolicyRulesTest {
             PolicyRules.validate(
                 mapOf(
                     "appLimits" to listOf(
-                        mapOf("pkg" to "com.example.app", "dailyMinutes" to 0),
+                        mapOf("pkg" to "com.example.app", "dailyMinutes" to 1441),
                     ),
                 ),
             )
