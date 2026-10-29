@@ -52,7 +52,7 @@ class _BlockedAppsScreenState extends ConsumerState<BlockedAppsScreen> {
     try {
       await ref.read(apiProvider).updatePolicy({'blockedApps': apps});
       messenger.showSnackBar(
-        const SnackBar(content: Text('Saved — pushed to your devices')),
+        const SnackBar(content: Text('Policy saved; delivery requested. Confirm each child device reports success and has the required access enabled.')),
       );
     } catch (e) {
       messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
