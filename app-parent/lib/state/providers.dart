@@ -6,7 +6,7 @@ import '../api/models.dart';
 
 /// Backend base URL (editable on the login screen for dev).
 final baseUrlProvider =
-    StateProvider<String>((ref) => 'http://192.168.1.5:3000');
+    StateProvider<String>((ref) => 'http://10.0.2.2:3000');
 
 final apiProvider = Provider<ApiClient>((ref) {
   final base = ref.watch(baseUrlProvider);
