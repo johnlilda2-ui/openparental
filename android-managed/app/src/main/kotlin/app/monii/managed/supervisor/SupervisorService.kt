@@ -173,6 +173,8 @@ class SupervisorService : Service() {
         @Volatile
         private var activeInstance: SupervisorService? = null
 
+        fun isActive(): Boolean = activeInstance != null
+
         suspend fun <T> withLocationForeground(block: suspend () -> T): T {
             val service = activeInstance
                 ?: throw IllegalStateException("OpenParental protection service is not running; reopen the child app and retry")
