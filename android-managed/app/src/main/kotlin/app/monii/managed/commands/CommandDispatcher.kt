@@ -43,7 +43,7 @@ class CommandDispatcher(
             }
             "PING" -> mapOf("pong" to true, "deviceTime" to System.currentTimeMillis())
             "REQUEST_LOCATION" -> {
-                val uploaded = LocationReporter(context).reportLastKnown(repo)
+                val uploaded = LocationReporter(context).reportLastKnown(repo, requireFreshFix = true)
                 if (uploaded) mapOf("requested" to true, "uploaded" to true)
                 else error("No location fix available; check location services and permission")
             }
