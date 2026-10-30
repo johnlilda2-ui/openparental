@@ -19,7 +19,7 @@ describe('CommandsService', () => {
       updateMany: jest.Mock;
     };
   };
-  let devices: { getForFamily: jest.Mock };
+  let devices: { getForFamily: jest.Mock; clearRejectedFcmToken: jest.Mock };
   let fcm: { sendData: jest.Mock };
   let audit: { log: jest.Mock };
 
@@ -38,8 +38,9 @@ describe('CommandsService', () => {
       getForFamily: jest
         .fn()
         .mockResolvedValue({ id: 'd1', familyId: 'f1', fcmToken: 'tok' }),
+      clearRejectedFcmToken: jest.fn().mockResolvedValue(undefined),
     };
-    fcm = { sendData: jest.fn().mockResolvedValue(true) };
+    fcm = { sendData: jest.fn().mockResolvedValue('sent') };
     audit = { log: jest.fn().mockResolvedValue(undefined) };
 
     const ref = await Test.createTestingModule({
@@ -88,6 +89,30 @@ describe('CommandsService', () => {
       expect(expiresAt.getTime() - Date.now()).toBeGreaterThan(
         6 * 24 * 60 * 60 * 1000,
       );
+    });
+
+    it('keeps the command QUEUED when FCM delivery fails', async () => {
+      fcm.sendData.mockResolvedValue('failed');
+      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.create.mockResolvedValue({ id: 'c-failed', type: 'PING' });
+      prisma.command.update.mockResolvedValue({ id: 'c-failed', state: 'QUEUED' });
+
+      const res = await service.enqueue('f1', 'd1', { type: 'PING' as never });
+
+      expect(res.state).toBe('QUEUED');
+      expect(devices.clearRejectedFcmToken).not.toHaveBeenCalled();
+    });
+
+    it('clears only the rejected token and keeps the command QUEUED', async () => {
+      fcm.sendData.mockResolvedValue('invalid-token');
+      prisma.command.findUnique.mockResolvedValue(null);
+      prisma.command.create.mockResolvedValue({ id: 'c-invalid', type: 'PING' });
+      prisma.command.update.mockResolvedValue({ id: 'c-invalid', state: 'QUEUED' });
+
+      const res = await service.enqueue('f1', 'd1', { type: 'PING' as never });
+
+      expect(res.state).toBe('QUEUED');
+      expect(devices.clearRejectedFcmToken).toHaveBeenCalledWith('d1', 'tok');
     });
 
     it('is idempotent: an existing key returns the existing command', async () => {
