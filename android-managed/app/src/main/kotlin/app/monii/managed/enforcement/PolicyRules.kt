@@ -27,7 +27,12 @@ class PolicyRules(
         fun load(context: Context): PolicyRules? {
             val json = PolicyStore.loadJson(context) ?: return null
             return try {
-                parse(json)
+                parse(json).also { rules ->
+                    Log.i(
+                        TAG,
+                        "Loaded policy: blockedApps=${rules.blockedApps.size}, appLimits=${rules.appLimits.size}, schedules=${rules.schedules.size}",
+                    )
+                }
             } catch (error: Exception) {
                 Log.e(TAG, "Stored policy could not be parsed; enforcement skipped", error)
                 null
