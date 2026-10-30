@@ -110,12 +110,45 @@ class ApiClient {
 
   // ---- commands ----
 
-  Future<void> sendCommand(String deviceId, String type,
+  Future<CommandStatus> sendCommand(String deviceId, String type,
       [Map<String, dynamic>? payload]) async {
-    await _dio.post<dynamic>('/devices/$deviceId/commands', data: {
-      'type': type,
-      if (payload != null) 'payload': payload,
-    });
+    final response = await _dio.post<dynamic>(
+      '/devices/$deviceId/commands',
+      data: {
+        'type': type,
+        if (payload != null) 'payload': payload,
+      },
+    );
+    return CommandStatus.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  Future<CommandStatus> commandStatus(String commandId) async {
+    final response = await _dio.get<dynamic>('/commands/$commandId');
+    return CommandStatus.fromJson(
+      response.data as Map<String, dynamic>,
+    );
+  }
+
+  /// Polls the existing command-status endpoint until the child reports a
+  /// terminal result or the bounded wait expires. A non-terminal result means
+  /// the command is still queued, sent, or acknowledged—not that it succeeded.
+  Future<CommandStatus> waitForCommand(
+    CommandStatus submitted, {
+    Duration timeout = const Duration(seconds: 20),
+    Duration interval = const Duration(seconds: 2),
+  }) async {
+    var latest = submitted;
+    final deadline = DateTime.now().add(timeout);
+    while (!latest.isTerminal && DateTime.now().isBefore(deadline)) {
+      final remaining = deadline.difference(DateTime.now());
+      await Future.delayed(
+        remaining.compareTo(interval) < 0 ? remaining : interval,
+      );
+      latest = await commandStatus(latest.id);
+    }
+    return latest;
   }
 
   // ---- policy ----
