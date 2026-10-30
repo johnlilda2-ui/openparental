@@ -2,25 +2,28 @@ package app.monii.managed.enforcement
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
+import android.util.Log
 
-/**
- * Decides whether the foreground app should be blocked and, if so, bounces the
- * user home. Block reasons: explicit block list, an active blocking schedule
- * (bedtime/school), or a per-app daily time limit exceeded.
- *
- * Honest limit (from the eng review): GLOBAL_ACTION_HOME is racy and a fast
- * switcher can flash the app for a moment. The VPN layer (Phase 6) is the
- * harder-to-dodge backstop; this is the responsive first line.
- */
+/** Evaluates foreground apps and records whether Android accepted enforcement. */
 class EnforcementController(context: Context) {
     private val appContext = context.applicationContext
     private val usage = UsageTracker(appContext)
 
     fun onForegroundApp(pkg: String, service: AccessibilityService) {
-        if (pkg == appContext.packageName) return // never block ourselves
-        val rules = PolicyRules.load(appContext) ?: return
-        if (shouldBlock(pkg, rules)) {
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        if (pkg == appContext.packageName) return
+
+        val rules = PolicyRules.load(appContext)
+        if (rules == null) {
+            Log.w(TAG, "No readable policy; cannot evaluate foreground package=$pkg")
+            return
+        }
+        if (!shouldBlock(pkg, rules)) return
+
+        val accepted = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+        if (accepted) {
+            Log.i(TAG, "Blocked foreground package=$pkg; Android accepted HOME action")
+        } else {
+            Log.e(TAG, "Blocking failed for package=$pkg; Android rejected HOME action")
         }
     }
 
@@ -31,4 +34,6 @@ class EnforcementController(context: Context) {
         if (limit != null && usage.todayMinutes(pkg) >= limit) return true
         return false
     }
+
+    private companion object { const val TAG = "MoniiEnforcement" }
 }
