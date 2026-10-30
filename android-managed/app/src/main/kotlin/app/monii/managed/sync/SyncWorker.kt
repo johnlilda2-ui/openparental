@@ -23,8 +23,8 @@ class SyncWorker(context: Context, params: WorkerParameters) :
             // Keep FCM current after Firebase rotates the registration token.
             repo.syncFcmToken()
             repo.heartbeat(batteryPct())
-            // Refresh location on every sync. LocationReporter safely no-ops if
-            // permission/provider is unavailable, and reports a new fix when possible.
+            // Upload the newest cached fix without holding the sync cycle for a GPS timeout.
+            // Explicit REQUEST_LOCATION commands request a fresh fix.
             LocationReporter(applicationContext).reportLastKnown(repo)
             repo.flushEvents()
             CommandDispatcher(applicationContext, repo, admin).syncAndExecute()
