@@ -39,7 +39,15 @@ class CommandDispatcher(
                 val rules = command.payload?.get("rules") as? Map<String, Any?>
                     ?: error("SET_POLICY payload is missing rules")
                 PolicyStore.save(context, rules)
-                mapOf("applied" to true, "version" to command.payload["version"])
+                Log.i(
+                    TAG,
+                    "SET_POLICY stored version=${command.payload["version"]}; blockedApps=${(rules["blockedApps"] as? List<*>)?.size ?: 0}",
+                )
+                mapOf(
+                    "applied" to true,
+                    "version" to command.payload["version"],
+                    "blockedApps" to (rules["blockedApps"] as? List<*>)?.size ?: 0,
+                )
             }
             "PING" -> mapOf("pong" to true, "deviceTime" to System.currentTimeMillis())
             "REQUEST_LOCATION" -> {
