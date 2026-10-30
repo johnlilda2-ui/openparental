@@ -43,6 +43,20 @@ describe('LocationsService', () => {
     expect(prisma.device.update).toHaveBeenCalled();
   });
 
+  it('uses server receipt time instead of an untrusted device timestamp', async () => {
+    const before = Date.now();
+    await service.ingest('d1', {
+      lat: 1.5,
+      lng: 2.5,
+      occurredAt: '2020-01-01T00:00:00.000Z',
+    });
+    const after = Date.now();
+
+    const data = prisma.location.create.mock.calls[0][0].data;
+    expect(data.occurredAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(data.occurredAt.getTime()).toBeLessThanOrEqual(after);
+  });
+
   it('latest enforces ownership', async () => {
     await service.latest('f1', 'd1');
     expect(devices.getForFamily).toHaveBeenCalledWith('f1', 'd1');
