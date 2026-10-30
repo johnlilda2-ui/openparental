@@ -3,14 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
 import { readFileSync } from 'fs';
 
-/**
- * Push abstraction over firebase-admin. Supports either a mounted service-account
- * file or JSON stored in the hosting provider's secret environment variables.
- * With no credentials it remains in explicit stub mode so local development works.
- *
- * High priority is reserved for wake-critical messages (lock, screen-view). FCM
- * quota-limits high priority; abuse silently downgrades to Doze-buffered normal.
- */
+export type FcmSendResult = 'sent' | 'disabled' | 'invalid-token' | 'failed';
+
 @Injectable()
 export class FcmService implements OnModuleInit {
   private readonly logger = new Logger(FcmService.name);
@@ -21,56 +15,34 @@ export class FcmService implements OnModuleInit {
   onModuleInit(): void {
     const path = this.config.get<string>('fcm.serviceAccountPath');
     const json = this.config.get<string>('fcm.serviceAccountJson');
-
     if (!path && !json) {
-      this.logger.warn(
-        'FCM not configured — stub mode (pushes logged, not sent). Set FCM_SERVICE_ACCOUNT_JSON or FCM_SERVICE_ACCOUNT_PATH to enable push delivery.',
-      );
+      this.logger.warn('FCM not configured — push delivery is disabled.');
       return;
     }
-
     try {
-      const serviceAccount = JSON.parse(
-        json || readFileSync(path as string, 'utf8'),
-      );
-      this.app = admin.initializeApp(
-        { credential: admin.credential.cert(serviceAccount) },
-        'monii',
-      );
+      const serviceAccount = JSON.parse(json || readFileSync(path as string, 'utf8'));
+      this.app = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) }, 'monii');
       this.logger.log('FCM initialized.');
-    } catch {
-      this.logger.error(
-        'FCM initialization failed — push delivery is disabled. Verify the Firebase service-account JSON/path.',
-      );
+    } catch (error) {
+      this.logger.error(`FCM initialization failed: ${String(error)}`);
     }
   }
 
-  get enabled(): boolean {
-    return this.app !== null;
-  }
+  get enabled(): boolean { return this.app !== null; }
 
-  /** Returns true if the message was handed to FCM, false in stub/failure. */
-  async sendData(
-    token: string,
-    data: Record<string, string>,
-    highPriority = true,
-  ): Promise<boolean> {
-    if (!this.app) {
-      this.logger.debug(
-        `[stub] FCM -> ${token.slice(0, 8)}… ${JSON.stringify(data)}`,
-      );
-      return false;
-    }
+  async sendData(token: string, data: Record<string, string>, highPriority = true): Promise<FcmSendResult> {
+    if (!this.app) return 'disabled';
     try {
-      await admin.messaging(this.app).send({
-        token,
-        data,
-        android: { priority: highPriority ? 'high' : 'normal' },
-      });
-      return true;
-    } catch (e) {
-      this.logger.warn(`FCM send failed: ${String(e)}`);
-      return false;
+      await admin.messaging(this.app).send({ token, data, android: { priority: highPriority ? 'high' : 'normal' } });
+      return 'sent';
+    } catch (error) {
+      const code = (error as { code?: string })?.code;
+      if (code === 'messaging/registration-token-not-registered' || code === 'messaging/invalid-registration-token') {
+        this.logger.warn(`FCM rejected an obsolete registration token (${code}); it must be refreshed by the child app.`);
+        return 'invalid-token';
+      }
+      this.logger.error(`FCM send failed (${code ?? 'unknown'}): ${String(error)}`);
+      return 'failed';
     }
   }
 }
