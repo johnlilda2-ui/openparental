@@ -1,16 +1,13 @@
 package app.monii.managed.enforcement
 
 import android.content.Context
+import android.util.Log
 import app.monii.managed.data.PolicyStore
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import java.time.LocalTime
 
-/**
- * Typed view over the policy JSON pushed by SET_POLICY. Shape:
- *   { blockedApps: [pkg], appLimits: [{pkg, dailyMinutes}],
- *     schedules: [{start:"22:00", end:"06:30", blockAll:true}] }
- */
+/** Typed view over the active policy rules stored by SET_POLICY. */
 class PolicyRules(
     val blockedApps: Set<String>,
     val appLimits: Map<String, Int>,
@@ -22,41 +19,50 @@ class PolicyRules(
         schedules.any { it.blockAll && inWindow(now, it.start, it.end) }
 
     private fun inWindow(now: LocalTime, start: LocalTime, end: LocalTime): Boolean =
-        if (start <= end) now >= start && now < end
-        else now >= start || now < end // overnight (e.g. 22:00 -> 06:30)
+        if (start <= end) now >= start && now < end else now >= start || now < end
 
     companion object {
+        private const val TAG = "MoniiPolicy"
+
         fun load(context: Context): PolicyRules? {
             val json = PolicyStore.loadJson(context) ?: return null
-            return runCatching { parse(json) }.getOrNull()
+            return try {
+                parse(json)
+            } catch (error: Exception) {
+                Log.e(TAG, "Stored policy could not be parsed; enforcement skipped", error)
+                null
+            }
         }
 
-        private fun parse(json: String): PolicyRules {
+        internal fun parse(json: String): PolicyRules {
             val obj = Gson().fromJson(json, JsonObject::class.java)
+                ?: throw IllegalArgumentException("Policy JSON is empty")
             val blocked = obj.getAsJsonArray("blockedApps")
-                ?.mapNotNull { runCatching { it.asString }.getOrNull() }
-                ?.toSet() ?: emptySet()
+                ?.mapNotNull { element ->
+                    runCatching { element.asString.trim() }.getOrNull()
+                        ?.takeIf { it.isNotEmpty() }
+                }?.toSet() ?: emptySet()
 
             val limits = mutableMapOf<String, Int>()
-            obj.getAsJsonArray("appLimits")?.forEach { el ->
-                val o = el.asJsonObject
-                val pkg = o.get("pkg")?.asString
-                val mins = o.get("dailyMinutes")?.asInt
-                if (pkg != null && mins != null) limits[pkg] = mins
+            obj.getAsJsonArray("appLimits")?.forEach { element ->
+                val rule = element.asJsonObject
+                val pkg = rule.get("pkg")?.asString?.trim()
+                val minutes = rule.get("dailyMinutes")?.asInt
+                if (!pkg.isNullOrEmpty() && minutes != null && minutes >= 0) {
+                    limits[pkg] = minutes
+                }
             }
 
             val schedules = mutableListOf<Schedule>()
-            obj.getAsJsonArray("schedules")?.forEach { el ->
-                val o = el.asJsonObject
-                val start = o.get("start")?.asString
-                val end = o.get("end")?.asString
-                val blockAll = o.get("blockAll")?.asBoolean ?: false
+            obj.getAsJsonArray("schedules")?.forEach { element ->
+                val rule = element.asJsonObject
+                val start = rule.get("start")?.asString
+                val end = rule.get("end")?.asString
+                val blockAll = rule.get("blockAll")?.asBoolean ?: false
                 if (start != null && end != null) {
                     runCatching {
-                        schedules.add(
-                            Schedule(LocalTime.parse(start), LocalTime.parse(end), blockAll),
-                        )
-                    }
+                        schedules.add(Schedule(LocalTime.parse(start), LocalTime.parse(end), blockAll))
+                    }.onFailure { Log.w(TAG, "Ignoring invalid schedule entry", it) }
                 }
             }
             return PolicyRules(blocked, limits, schedules)
