@@ -46,7 +46,7 @@ class CommandDispatcher(
                 mapOf(
                     "applied" to true,
                     "version" to command.payload["version"],
-                    "blockedApps" to (rules["blockedApps"] as? List<*>)?.size ?: 0,
+                    "blockedApps" to ((rules["blockedApps"] as? List<*>)?.size ?: 0),
                 )
             }
             "PING" -> mapOf("pong" to true, "deviceTime" to System.currentTimeMillis())
