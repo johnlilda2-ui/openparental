@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, 'Suhaib3100/**']
+    branches: [main, 'Suhaib3100/**', 'feature/openparental-web-dashboard']
   pull_request:
 
 jobs:
@@ -13,8 +13,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: npm
@@ -28,25 +28,43 @@ jobs:
     name: Managed app (assembleDebug)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
       - uses: gradle/actions/setup-gradle@v4
-      # Generates the wrapper (not committed) then builds the debug APK.
+      - name: Restore Firebase app configuration (if configured)
+        env:
+          FIREBASE_GOOGLE_SERVICES_JSON: ${{ secrets.FIREBASE_GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$FIREBASE_GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$FIREBASE_GOOGLE_SERVICES_JSON" > android-managed/app/google-services.json
+            echo "Firebase Android configuration restored from GitHub Actions secret."
+          else
+            echo "Firebase Android configuration secret is not set; building without Firebase app configuration."
+          fi
       - name: Build debug APK
         working-directory: android-managed
         run: |
           gradle wrapper --gradle-version 8.9
           ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Upload child APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: openparental-child-apk
+          path: android-managed/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 14
 
   parent-app:
     name: Parent app (analyze)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -55,3 +73,29 @@ jobs:
         run: |
           flutter pub get
           flutter analyze
+
+  parent-web:
+    name: Parent dashboard (Flutter Web build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Generate web platform files
+        working-directory: app-parent
+        run: flutter create --platforms=web .
+      - name: Build web dashboard
+        working-directory: app-parent
+        env:
+          OPENPARENTAL_API_BASE_URL: ${{ vars.OPENPARENTAL_API_BASE_URL }}
+        run: |
+          flutter pub get
+          flutter build web --release --dart-define=OPENPARENTAL_API_BASE_URL="${OPENPARENTAL_API_BASE_URL:-http://192.168.1.5:3000}"
+      - name: Upload web dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openparental-parent-web
+          path: app-parent/build/web/
+          if-no-files-found: error
+          retention-days: 14

@@ -4,9 +4,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_client.dart';
 import '../api/models.dart';
 
-/// Backend base URL (editable on the login screen for dev).
-final baseUrlProvider =
-    StateProvider<String>((ref) => 'http://192.168.1.5:3000');
+/// Can be set at build time for a hosted web deployment:
+/// flutter build web --dart-define=OPENPARENTAL_API_BASE_URL=https://api.example.com
+const _configuredApiBaseUrl = String.fromEnvironment(
+  'OPENPARENTAL_API_BASE_URL',
+  defaultValue: 'http://192.168.1.5:3000',
+);
+
+/// The Render dashboard's existing build command still supplies this retired
+/// hostname. Normalize it until the static-site build command is corrected.
+const _retiredRenderApiUrl = 'https://openparental-api.onrender.com';
+const _productionRenderApiUrl = 'https://openparental-api-jxh4.onrender.com';
+
+String get _initialApiBaseUrl =>
+    _configuredApiBaseUrl == _retiredRenderApiUrl
+        ? _productionRenderApiUrl
+        : _configuredApiBaseUrl;
+
+/// Backend base URL (editable on the login screen for self-hosting/dev).
+final baseUrlProvider = StateProvider<String>((ref) => _initialApiBaseUrl);
 
 final apiProvider = Provider<ApiClient>((ref) {
   final base = ref.watch(baseUrlProvider);

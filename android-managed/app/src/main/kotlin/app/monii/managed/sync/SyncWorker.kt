@@ -7,13 +7,10 @@ import androidx.work.WorkerParameters
 import app.monii.managed.admin.AdminManager
 import app.monii.managed.commands.CommandDispatcher
 import app.monii.managed.identity.DeviceStore
+import app.monii.managed.location.LocationReporter
 import app.monii.managed.repo.MoniiRepository
 
-/**
- * WorkManager backstop (15 min): heartbeat + flush buffered events + pull/execute
- * commands. The Supervisor runs a faster loop while alive; this guarantees the
- * device still syncs after the OEM kills the service.
- */
+/** WorkManager backstop: heartbeat, location, events, FCM token and commands. */
 class SyncWorker(context: Context, params: WorkerParameters) :
     CoroutineWorker(context, params) {
 
@@ -23,7 +20,12 @@ class SyncWorker(context: Context, params: WorkerParameters) :
         val repo = MoniiRepository(applicationContext, store)
         val admin = AdminManager(applicationContext)
         return try {
+            // Keep FCM current after Firebase rotates the registration token.
+            repo.syncFcmToken()
             repo.heartbeat(batteryPct())
+            // Upload the newest cached fix without holding the sync cycle for a GPS timeout.
+            // Explicit REQUEST_LOCATION commands request a fresh fix.
+            LocationReporter(applicationContext).reportLastKnown(repo)
             repo.flushEvents()
             CommandDispatcher(applicationContext, repo, admin).syncAndExecute()
             Result.success()

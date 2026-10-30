@@ -29,4 +29,9 @@ export class ClaimPairingDto {
   @IsOptional()
   @IsString()
   fcmToken?: string;
+
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  installationId?: string;
 }

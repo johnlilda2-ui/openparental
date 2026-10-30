@@ -22,6 +22,7 @@ import app.monii.managed.admin.AdminManager
 import app.monii.managed.commands.CommandDispatcher
 import app.monii.managed.databinding.ActivityMainBinding
 import app.monii.managed.identity.DeviceStore
+import app.monii.managed.permissions.SpecialAccess
 import app.monii.managed.repo.MoniiRepository
 import app.monii.managed.supervisor.SupervisorService
 import app.monii.managed.supervisor.WatchdogScheduler
@@ -63,6 +64,12 @@ class MainActivity : AppCompatActivity() {
         binding.btnSync.setOnClickListener { syncNow() }
         binding.btnUnpair.setOnClickListener {
             store.clearPairing(); toast("Unpaired"); render()
+        }
+        binding.rowAccessibility.setOnClickListener {
+            runCatching { startActivity(SpecialAccess.accessibilitySettingsIntent()) }
+        }
+        binding.rowUsage.setOnClickListener {
+            runCatching { startActivity(SpecialAccess.usageAccessSettingsIntent()) }
         }
         binding.rowAdmin.setOnClickListener {
             runCatching { startActivity(admin.enableIntent()) }
@@ -131,6 +138,8 @@ class MainActivity : AppCompatActivity() {
         val serviceOn = SupervisorService.running
         val adminOn = admin.isActive()
         val batteryOk = isIgnoringBatteryOptimizations()
+        val accessibilityOn = SpecialAccess.isAccessibilityEnabled(this)
+        val usageAccessOn = SpecialAccess.isUsageAccessGranted(this)
 
         binding.groupPairing.isVisible = !paired
         binding.groupStatus.isVisible = paired
@@ -141,7 +150,7 @@ class MainActivity : AppCompatActivity() {
                 R.color.op_brand_container, "🔗",
                 getString(R.string.hero_welcome), getString(R.string.hero_welcome_sub),
             )
-            serviceOn && adminOn && batteryOk -> hero(
+            serviceOn && adminOn && batteryOk && accessibilityOn && usageAccessOn -> hero(
                 R.color.op_online_container, "🛡️",
                 getString(R.string.hero_protected),
                 "${getString(R.string.row_sync)}: ${ago(s.lastHeartbeatAt, now)}",
@@ -151,6 +160,8 @@ class MainActivity : AppCompatActivity() {
                     if (!serviceOn) add(getString(R.string.row_service) + " " + getString(R.string.val_stopped).lowercase(Locale.US))
                     if (!adminOn) add(getString(R.string.row_admin) + " " + getString(R.string.val_off).lowercase(Locale.US))
                     if (!batteryOk) add(getString(R.string.row_battery) + " " + getString(R.string.val_restricted).lowercase(Locale.US))
+                    if (!accessibilityOn) add(getString(R.string.row_accessibility) + " " + getString(R.string.val_accessibility_off).lowercase(Locale.US))
+                    if (!usageAccessOn) add(getString(R.string.row_usage) + " " + getString(R.string.val_usage_off).lowercase(Locale.US))
                 }
                 hero(
                     R.color.op_attention_container, "⚠️",
@@ -163,6 +174,12 @@ class MainActivity : AppCompatActivity() {
         binding.valService.text =
             getString(if (serviceOn) R.string.val_running else R.string.val_stopped)
         dot(binding.dotService, if (serviceOn) R.color.op_online else R.color.op_alert)
+
+        binding.valAccessibility.text = getString(if (accessibilityOn) R.string.val_accessibility_on else R.string.val_accessibility_off)
+        dot(binding.dotAccessibility, if (accessibilityOn) R.color.op_online else R.color.op_alert)
+
+        binding.valUsage.text = getString(if (usageAccessOn) R.string.val_usage_on else R.string.val_usage_off)
+        dot(binding.dotUsage, if (usageAccessOn) R.color.op_online else R.color.op_attention)
 
         binding.valAdmin.text = getString(if (adminOn) R.string.val_on else R.string.val_off)
         dot(binding.dotAdmin, if (adminOn) R.color.op_online else R.color.op_attention)
@@ -181,6 +198,8 @@ class MainActivity : AppCompatActivity() {
             appendLine("Model: ${Build.MANUFACTURER} ${Build.MODEL}")
             appendLine("Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             appendLine("Uptime this run: ${durationSince(s.serviceStartAt, now)}")
+            appendLine("Accessibility enabled: $accessibilityOn")
+            appendLine("Usage access granted: $usageAccessOn")
             appendLine("Last heartbeat: ${ago(s.lastHeartbeatAt, now)}")
             append("Starts/boot/watchdog: ${s.startCount}/${s.bootCount}/${s.watchdogCount}")
         }

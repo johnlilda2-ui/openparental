@@ -1,16 +1,14 @@
 package app.monii.managed.commands
 
 import android.content.Context
+import android.util.Log
 import app.monii.managed.admin.AdminManager
 import app.monii.managed.data.PolicyStore
+import app.monii.managed.location.LocationReporter
 import app.monii.managed.net.CommandDto
 import app.monii.managed.repo.MoniiRepository
 
-/**
- * Pull pending commands, execute each, ack + post the result. The server spine
- * is idempotent (ack/result are no-ops once terminal), so re-running after a
- * crash or duplicate wake is safe.
- */
+/** Pull commands, execute, then report their terminal result. */
 class CommandDispatcher(
     private val context: Context,
     private val repo: MoniiRepository,
@@ -19,18 +17,18 @@ class CommandDispatcher(
     suspend fun syncAndExecute(): Int {
         val commands = repo.pullCommands()
         for (command in commands) {
-            runCatching { repo.ack(command.id) }
             val outcome = runCatching { execute(command) }
-            if (outcome.isSuccess) {
-                repo.result(command.id, outcome.getOrNull(), null)
-            } else {
-                repo.result(command.id, null, outcome.exceptionOrNull()?.message ?: "error")
+            runCatching {
+                if (outcome.isSuccess) repo.result(command.id, outcome.getOrNull(), null)
+                else repo.result(command.id, null, outcome.exceptionOrNull()?.message ?: "error")
+            }.onFailure {
+                Log.w(TAG, "Could not report command ${command.id}; it will retry on sync", it)
             }
         }
         return commands.size
     }
 
-    private fun execute(command: CommandDto): Map<String, Any?> =
+    private suspend fun execute(command: CommandDto): Map<String, Any?> =
         when (command.type) {
             "LOCK" -> {
                 admin.lockNow()
@@ -38,11 +36,27 @@ class CommandDispatcher(
             }
             "UNLOCK" -> mapOf("noop" to "cannot force-unlock without Device Owner")
             "SET_POLICY" -> {
-                PolicyStore.save(context, command.payload)
-                mapOf("applied" to true)
+                val rules = command.payload?.get("rules") as? Map<String, Any?>
+                    ?: error("SET_POLICY payload is missing rules")
+                PolicyStore.save(context, rules)
+                Log.i(
+                    TAG,
+                    "SET_POLICY stored version=${command.payload["version"]}; blockedApps=${(rules["blockedApps"] as? List<*>)?.size ?: 0}",
+                )
+                mapOf(
+                    "applied" to true,
+                    "version" to command.payload["version"],
+                    "blockedApps" to ((rules["blockedApps"] as? List<*>)?.size ?: 0),
+                )
             }
-            "PING" -> mapOf("pong" to true)
-            "REQUEST_LOCATION" -> mapOf("requested" to true) // Phase 6 wires the actual fix
+            "PING" -> mapOf("pong" to true, "deviceTime" to System.currentTimeMillis())
+            "REQUEST_LOCATION" -> {
+                val uploaded = LocationReporter(context).reportLastKnown(repo, requireFreshFix = true)
+                if (uploaded) mapOf("requested" to true, "uploaded" to true)
+                else error("No location fix available; check location services and permission")
+            }
             else -> mapOf("ignored" to command.type)
         }
+
+    companion object { private const val TAG = "CommandDispatcher" }
 }

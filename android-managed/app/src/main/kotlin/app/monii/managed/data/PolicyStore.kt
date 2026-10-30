@@ -1,6 +1,7 @@
 package app.monii.managed.data
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.Gson
 
 /** Latest policy received via SET_POLICY. The Phase 5 enforcement engine reads it. */
@@ -11,8 +12,11 @@ object PolicyStore {
         val json = Gson().toJson(payload ?: emptyMap<String, Any?>())
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit().putString("policy", json).apply()
+        Log.i(TAG, "Saved policy payload (${json.length} bytes)")
     }
 
     fun loadJson(context: Context): String? =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("policy", null)
+
+    private const val TAG = "MoniiPolicyStore"
 }

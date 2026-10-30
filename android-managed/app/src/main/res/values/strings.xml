@@ -23,11 +23,17 @@
 
     <string name="label_status">STATUS</string>
     <string name="row_service">Protection service</string>
+    <string name="row_accessibility">App blocking access</string>
+    <string name="row_usage">Screen-time access</string>
     <string name="row_admin">Device admin</string>
     <string name="row_battery">Battery</string>
     <string name="row_sync">Last sync</string>
     <string name="val_running">Running</string>
     <string name="val_stopped">Stopped</string>
+    <string name="val_accessibility_on">Enabled</string>
+    <string name="val_accessibility_off">Enable in Settings</string>
+    <string name="val_usage_on">Granted</string>
+    <string name="val_usage_off">Grant in Settings</string>
     <string name="val_on">On</string>
     <string name="val_off">Off</string>
     <string name="val_unrestricted">Unrestricted</string>

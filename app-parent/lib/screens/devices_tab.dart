@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../api/models.dart';
 import '../state/providers.dart';
@@ -37,11 +38,63 @@ class DevicesTab extends ConsumerWidget {
   Future<void> _command(BuildContext context, WidgetRef ref, String deviceId,
       String type, String label) async {
     final messenger = ScaffoldMessenger.of(context);
+    final api = ref.read(apiProvider);
     try {
-      await ref.read(apiProvider).sendCommand(deviceId, type);
-      messenger.showSnackBar(SnackBar(content: Text('$label sent')));
+      final submitted = await api.sendCommand(deviceId, type);
+      CommandStatus status;
+      try {
+        status = await api.waitForCommand(submitted);
+      } catch (_) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$label was queued, but its execution status could not be checked.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      switch (status.state) {
+        case 'DONE':
+          final confirmed = status.result;
+          if (type == 'PING' && confirmed?['pong'] == true) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Child device responded to ping.')),
+            );
+          } else if (type == 'LOCK' && confirmed?['locked'] == true) {
+            messenger.showSnackBar(
+              const SnackBar(content: Text('Lock command completed on child device.')),
+            );
+          } else {
+            messenger.showSnackBar(
+              SnackBar(content: Text('$label command completed.')),
+            );
+          }
+          break;
+        case 'FAILED':
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text('$label failed: ${status.error ?? 'Device rejected the command.'}'),
+            ),
+          );
+          break;
+        case 'EXPIRED':
+          messenger.showSnackBar(
+            SnackBar(content: Text('$label expired before the device completed it.')),
+          );
+          break;
+        default:
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                '$label is queued. The child device has not confirmed completion yet.',
+              ),
+            ),
+          );
+      }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+      messenger.showSnackBar(SnackBar(content: Text('Could not send $label: $e')));
     }
   }
 
@@ -60,6 +113,7 @@ class DevicesTab extends ConsumerWidget {
                 device: d,
                 onTap: () {
                   ref.read(selectedDeviceIdProvider.notifier).state = d.id;
+                  const FlutterSecureStorage().write(key: 'selected_device_id', value: d.id);
                   Navigator.pop(sheet);
                 },
               ),

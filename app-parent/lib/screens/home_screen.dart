@@ -1,19 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'alerts_tab.dart';
 import 'devices_tab.dart';
 import 'me_tab.dart';
+import '../state/providers.dart';
 
 /// 3-tab shell: Alerts · Devices (home) · Me.
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _index = 1; // Devices is the home tab.
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreSelectedDevice();
+  }
+
+  Future<void> _restoreSelectedDevice() async {
+    final saved = await const FlutterSecureStorage().read(key: 'selected_device_id');
+    if (!mounted || saved == null || saved.isEmpty) return;
+    ref.read(selectedDeviceIdProvider.notifier).state = saved;
+  }
+
+  void _selectTab(int index) {
+    // Re-fetch when opening Alerts so new server-side events are not hidden
+    // behind Riverpod's cached FutureProvider result.
+    if (index == 0) {
+      ref.invalidate(alertsProvider);
+    }
+    setState(() => _index = index);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +49,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: _selectTab,
         backgroundColor: scheme.surface,
         indicatorColor: scheme.primary.withValues(alpha: 0.14),
         destinations: const [

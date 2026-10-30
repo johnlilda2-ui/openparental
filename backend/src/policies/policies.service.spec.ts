@@ -76,6 +76,24 @@ describe('PoliciesService', () => {
     );
   });
 
+  it('reports partial queue failures without hiding the saved policy', async () => {
+    prisma.policy.findFirst.mockResolvedValue(null);
+    prisma.policy.updateMany.mockResolvedValue({ count: 0 });
+    prisma.policy.create.mockResolvedValue({ id: 'p1', version: 1, active: true });
+    prisma.device.findMany.mockResolvedValue([{ id: 'd1' }, { id: 'd2' }]);
+    commands.enqueue
+      .mockResolvedValueOnce({ id: 'c1', state: 'QUEUED' })
+      .mockRejectedValueOnce(new Error('queue unavailable'));
+
+    const res = await service.update('f1', { blockedApps: ['com.x'] });
+
+    expect(res.delivery).toEqual({
+      targetDevices: 2,
+      queuedDevices: 1,
+      failedDevices: 1,
+    });
+  });
+
   it('starts at version 1 when no policy exists yet', async () => {
     prisma.policy.findFirst.mockResolvedValue(null);
     prisma.policy.updateMany.mockResolvedValue({ count: 0 });

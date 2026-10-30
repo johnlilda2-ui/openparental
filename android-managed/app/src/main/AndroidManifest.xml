@@ -84,7 +84,7 @@
         <!-- Accessibility: app-launch enforcement (Phase 5) + web/keyword reading (Phase 6). -->
         <service
             android:name=".accessibility.MonitorAccessibilityService"
-            android:exported="false"
+            android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />

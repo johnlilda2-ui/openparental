@@ -32,6 +32,8 @@ class Device {
   final int? batteryPct;
   final String? model;
   final String? manufacturer;
+  final String? osVersion;
+  final String? appVersion;
   final DateTime? lastSeenAt;
 
   Device({
@@ -41,6 +43,8 @@ class Device {
     this.batteryPct,
     this.model,
     this.manufacturer,
+    this.osVersion,
+    this.appVersion,
     this.lastSeenAt,
   });
 
@@ -51,6 +55,8 @@ class Device {
         batteryPct: j['batteryPct'] as int?,
         model: j['model'] as String?,
         manufacturer: j['manufacturer'] as String?,
+        osVersion: j['osVersion'] as String?,
+        appVersion: j['appVersion'] as String?,
         lastSeenAt: j['lastSeenAt'] != null
             ? DateTime.tryParse(j['lastSeenAt'] as String)
             : null,
@@ -128,4 +134,38 @@ class DeviceLocation {
             ? DateTime.tryParse(j['occurredAt'] as String)
             : null,
       );
+}
+
+
+/// Execution state returned by the backend for a remote device command.
+class CommandStatus {
+  final String id;
+  final String type;
+  final String state;
+  final String? error;
+  final Map<String, dynamic>? result;
+
+  const CommandStatus({
+    required this.id,
+    required this.type,
+    required this.state,
+    this.error,
+    this.result,
+  });
+
+  bool get isTerminal =>
+      state == 'DONE' || state == 'FAILED' || state == 'EXPIRED';
+
+  factory CommandStatus.fromJson(Map<String, dynamic> json) {
+    final rawResult = json['result'];
+    return CommandStatus(
+      id: json['id'] as String,
+      type: (json['type'] as String?) ?? '',
+      state: (json['state'] as String?) ?? 'QUEUED',
+      error: json['error'] as String?,
+      result: rawResult is Map
+          ? Map<String, dynamic>.from(rawResult)
+          : null,
+    );
+  }
 }
