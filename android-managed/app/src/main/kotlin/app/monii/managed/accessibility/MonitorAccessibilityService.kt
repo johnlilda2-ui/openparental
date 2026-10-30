@@ -1,16 +1,18 @@
 package app.monii.managed.accessibility
 
 import android.accessibilityservice.AccessibilityService
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import app.monii.managed.enforcement.EnforcementController
 
-/**
- * The load-bearing accessibility service. v1 uses it for app-launch enforcement;
- * Phase 6 extends it to read browser URLs (web safety) and AMBER keyword/history.
- */
+/** Accessibility service used for foreground-app enforcement. */
 class MonitorAccessibilityService : AccessibilityService() {
-
     private val enforcement by lazy { EnforcementController(this) }
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        Log.i(TAG, "Accessibility service connected; app enforcement is active")
+    }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
@@ -19,6 +21,13 @@ class MonitorAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {
-        // no-op
+        Log.w(TAG, "Accessibility service interrupted")
     }
+
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        Log.w(TAG, "Accessibility service unbound")
+        return super.onUnbind(intent)
+    }
+
+    private companion object { const val TAG = "MoniiAccessibility" }
 }
