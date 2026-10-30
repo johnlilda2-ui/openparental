@@ -18,7 +18,8 @@ export class LocationsService {
         lat: dto.lat,
         lng: dto.lng,
         accuracyM: dto.accuracyM,
-        // Use server receipt time for ordering. Device clocks and cached fixes can be stale or incorrect.\n        occurredAt: new Date(),
+        // Use server receipt time for ordering. Device clocks and cached fixes can be stale or incorrect.
+        occurredAt: new Date(),
       },
     });
     await this.prisma.device
