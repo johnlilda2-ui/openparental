@@ -19,13 +19,13 @@ class LocationReporter(private val context: Context) {
     private val manager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
 
     /** Returns true only when coordinates were uploaded successfully. */
-    suspend fun reportLastKnown(repo: MoniiRepository): Boolean {
+    suspend fun reportLastKnown(repo: MoniiRepository, requireFreshFix: Boolean = false): Boolean {
         if (!hasPermission()) {
             Log.w(TAG, "Location update skipped: location permission is not granted")
             return false
         }
         val locationManager = manager ?: return false
-        val fresh = requestFreshFix(locationManager)
+        val fresh = if (requireFreshFix) requestFreshFix(locationManager) else null
         val location = fresh ?: newestCachedFix(locationManager)
         if (location == null) {
             Log.w(TAG, "No fresh or cached GPS/network fix is available")
